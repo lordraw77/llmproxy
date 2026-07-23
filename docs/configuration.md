@@ -16,6 +16,13 @@ All configuration is provided through environment variables, typically via a
 | `NVIDIA_API_KEY` | *(empty)* | **Yes** | Bearer token sent to the upstream API. Without it, every inference endpoint returns HTTP 500. |
 | `NVIDIA_MODEL` | `meta/llama-3.1-8b-instruct` | No | Single-model / default model. Used as the fallback default when `NVIDIA_MODELS` is not set. |
 | `NVIDIA_MODELS` | value of `NVIDIA_MODEL` | No | **Comma-separated list** of models to expose. All of them appear in the discovery endpoints (so they show up in Open WebUI's model picker). The **first entry is the default**. See [Multi-model support](#multi-model-support). |
+| `PROXY_API_KEY` | *(empty)* | No | If set, **inbound authentication** is enabled: every request must present this key via `Authorization: Bearer <key>` or `X-Api-Key: <key>`. `/` and `/health` stay open for health-checks. Empty = proxy is open (historic behavior). See [Security considerations](#security-considerations). |
+| `UPSTREAM_TIMEOUT` | `120` | No | Timeout in seconds for calls to the upstream API. |
+| `RETRY_MAX` | `2` | No | Number of retries (beyond the first attempt) on transient upstream failures — network errors and HTTP `429`/`5xx`. `0` disables retries. |
+| `RETRY_BACKOFF` | `0.5` | No | Base of the exponential backoff (seconds) between retries. A `Retry-After` header from the upstream takes precedence when present. |
+| `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | No | Model used by the embeddings endpoints when the client does not specify one (chat models are not valid for `/embeddings`). |
+| `EMBEDDINGS_INPUT_TYPE` | `query` | No | `input_type` applied to embeddings requests when the client omits it (`query` or `passage`; many NVIDIA embedders require it). Leave empty to never force it. |
+| `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
 
 ## Example `.env`
 
@@ -74,12 +81,16 @@ inference request, the client's requested `model` is used when it matches one of
 the exposed models, otherwise the default (first entry) is used. See
 [Multi-model support](#multi-model-support) above.
 
-### Only a subset of sampling options is forwarded
+### Sampling options forwarded
 
-For the Ollama, `/v1/completions`, and `/completion` endpoints, only
-`temperature` and `top_p` are passed upstream. Other sampling parameters are
-dropped. The `/v1/chat/completions` endpoint is the exception — it forwards the
-entire request payload (see [API Reference](api-reference.md)).
+For the Ollama, `/v1/completions`, and `/completion` endpoints, the following
+sampling parameters are normalized and forwarded upstream:
+`temperature`, `top_p`, `max_tokens`, `stop`, `presence_penalty`,
+`frequency_penalty`, `seed`, `n`. Ollama's `num_predict` (and llama.cpp's
+`n_predict`) are mapped to `max_tokens`. Parameters the upstream OpenAI schema
+does not accept (e.g. `top_k`) are dropped to avoid a `400`. The
+`/v1/chat/completions` endpoint forwards the **entire** request payload as-is
+(see [API Reference](api-reference.md)).
 
 ### Choosing a port
 
@@ -94,7 +105,9 @@ published host port.
   `.dockerignore` should already exclude it — verify before committing.
 - The `NVIDIA_API_KEY` grants access to your NVIDIA account's inference quota.
   Treat it as a secret.
-- llmproxy itself performs **no authentication** on inbound requests. Anyone who
-  can reach the port can consume your NVIDIA quota. Do not expose it directly to
-  the public internet — put it behind a reverse proxy / firewall / VPN. See
-  [Deployment](deployment.md).
+- llmproxy can enforce **inbound authentication**: set `PROXY_API_KEY` and every
+  request must present that key via `Authorization: Bearer <key>` or
+  `X-Api-Key: <key>` (`/` and `/health` stay open for health-checks). When it is
+  empty the proxy is open — anyone who can reach the port can consume your NVIDIA
+  quota, so also put it behind a reverse proxy / firewall / VPN and never expose
+  it directly to the public internet. See [Deployment](deployment.md).

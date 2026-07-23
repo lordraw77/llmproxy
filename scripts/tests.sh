@@ -85,7 +85,7 @@ pick_model() {
 
 TEST_NAMES=(
   "Discovery: /api/tags e /v1/models"
-  "Health e root"
+  "Health e root (+ /health?upstream=1)"
   "Chat OpenAI (scegli modello)"
   "Chat OpenAI in streaming (scegli modello)"
   "Chat Ollama /api/chat (scegli modello)"
@@ -95,6 +95,10 @@ TEST_NAMES=(
   "Vision (immagine, scegli modello vision)"
   "Traduzione (riva-translate)"
   "Content safety (nemotron safety)"
+  "Embeddings OpenAI /v1/embeddings"
+  "Embeddings Ollama /api/embed e /api/embeddings"
+  "Dettaglio modello /v1/models/<id>"
+  "Autenticazione (PROXY_API_KEY)"
   "Errore propagato (modello inesistente upstream)"
   "PING di TUTTI i modelli"
 )
@@ -109,6 +113,8 @@ test_1_discovery() {
 test_2_health() {
   hr; echo "GET /"; hr;        curl -s "$BASE/"; echo
   hr; echo "GET /health"; hr;  curl -s "$BASE/health" | pp .
+  hr; echo "GET /health?upstream=1 (verifica raggiungibilita' NVIDIA)"; hr
+  curl -s "$BASE/health?upstream=1" | pp .
   hr; echo "GET /api/version"; hr; curl -s "$BASE/api/version" | pp .
   hr; echo "GET /props"; hr;   curl -s "$BASE/props" | pp .
 }
@@ -179,14 +185,68 @@ test_11_safety() {
   req_chat "$m" "How do I bake chocolate chip cookies?" false | pp -r '.choices[0].message.content // .'
 }
 
-test_12_error() {
+test_12_embeddings_openai() {
+  local m="${EMBED_MODEL:-}"
+  hr; echo "Embeddings OpenAI /v1/embeddings${m:+ -> $m}"; hr
+  curl -s "$BASE/v1/embeddings" \
+    -H "Content-Type: application/json" \
+    -d "{${m:+\"model\":\"$m\",}\"input\":\"Hello embeddings world.\"}" \
+    | pp -r 'if .data then "model=\(.model)  dim=\(.data[0].embedding | length)  primi5=\(.data[0].embedding[0:5])" else . end'
+}
+
+test_13_embeddings_ollama() {
+  local m="${EMBED_MODEL:-}"
+  hr; echo "Embeddings Ollama /api/embed (nuovo)${m:+ -> $m}"; hr
+  curl -s "$BASE/api/embed" \
+    -H "Content-Type: application/json" \
+    -d "{${m:+\"model\":\"$m\",}\"input\":\"Hello from /api/embed.\"}" \
+    | pp -r 'if .embeddings then "model=\(.model)  vettori=\(.embeddings | length)  dim=\(.embeddings[0] | length)" else . end'
+  hr; echo "Embeddings Ollama /api/embeddings (legacy)${m:+ -> $m}"; hr
+  curl -s "$BASE/api/embeddings" \
+    -H "Content-Type: application/json" \
+    -d "{${m:+\"model\":\"$m\",}\"prompt\":\"Hello from /api/embeddings.\"}" \
+    | pp -r 'if .embedding then "dim=\(.embedding | length)  primi5=\(.embedding[0:5])" else . end'
+}
+
+test_14_model_detail() {
+  local m; m=$(pick_model)
+  hr; echo "Dettaglio modello -> GET /v1/models/$m"; hr
+  curl -s -w '\nHTTP %{http_code}\n' "$BASE/v1/models/$m" | pp .
+  hr; echo "Modello inesistente -> atteso 404"; hr
+  curl -s -w '\nHTTP %{http_code}\n' "$BASE/v1/models/nvidia/does-not-exist" | pp .
+}
+
+test_15_auth() {
+  hr; echo "Autenticazione (PROXY_API_KEY)"; hr
+  echo "Nota: se PROXY_API_KEY non e' impostata lato server, il proxy e' aperto"
+  echo "      e tutte le richieste rispondono 200 (comportamento storico)."
+  echo "      Imposta PROXY_KEY nell'ambiente del test per inviare il token."
+  echo
+  echo "-> senza token:"
+  curl -s -o /dev/null -w 'HTTP %{http_code}\n' "$BASE/v1/models"
+  if [ -n "${PROXY_KEY:-}" ]; then
+    echo "-> con Authorization: Bearer <PROXY_KEY>:"
+    curl -s -o /dev/null -w 'HTTP %{http_code}\n' "$BASE/v1/models" \
+      -H "Authorization: Bearer $PROXY_KEY"
+    echo "-> con X-Api-Key:"
+    curl -s -o /dev/null -w 'HTTP %{http_code}\n' "$BASE/v1/models" \
+      -H "X-Api-Key: $PROXY_KEY"
+    echo "-> con token errato (atteso 401 se auth attiva):"
+    curl -s -o /dev/null -w 'HTTP %{http_code}\n' "$BASE/v1/models" \
+      -H "Authorization: Bearer chiave-sbagliata"
+  fi
+  echo "-> /health (sempre esente da auth):"
+  curl -s -o /dev/null -w 'HTTP %{http_code}\n' "$BASE/health"
+}
+
+test_16_error() {
   hr; echo "Errore propagato -> modello inesistente"; hr
   curl -s -w '\nHTTP %{http_code}\n' "$BASE/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -d '{"model":"nvidia/does-not-exist","messages":[{"role":"user","content":"hi"}]}'
 }
 
-test_13_all() {
+test_17_all() {
   local models pass=0 fail=0 content err code resp body
   models=$(list_models)
   [ -z "$models" ] && { echo "Nessun modello su $BASE/v1/models"; return 1; }
@@ -223,8 +283,12 @@ run_test() {
     9)  test_9_vision ;;
     10) test_10_translate ;;
     11) test_11_safety ;;
-    12) test_12_error ;;
-    13|all) test_13_all ;;
+    12) test_12_embeddings_openai ;;
+    13) test_13_embeddings_ollama ;;
+    14) test_14_model_detail ;;
+    15) test_15_auth ;;
+    16) test_16_error ;;
+    17|all) test_17_all ;;
     *)  echo "Test sconosciuto: $1" >&2; return 1 ;;
   esac
 }
@@ -244,7 +308,7 @@ menu_tui_whiptail() {
   for name in "${TEST_NAMES[@]}"; do args+=("$i" "$name"); i=$((i+1)); done
   while true; do
     choice=$("$bin" --title "llmproxy tests ($BASE)" \
-      --menu "Scegli un test da eseguire:" 22 76 14 \
+      --menu "Scegli un test da eseguire:" 25 76 17 \
       "${args[@]}" 3>&1 1>&2 2>&3) || break
     clear
     run_test "$choice"

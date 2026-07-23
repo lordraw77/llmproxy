@@ -48,12 +48,24 @@ docker compose down
 
 ## Option B — Plain Docker
 
+Build locally:
+
 ```bash
 docker build -t llmproxy .
 docker run -d --name llmproxy \
   --env-file .env \
   -p 11434:11434 \
   llmproxy
+```
+
+…or use the **prebuilt image** from Docker Hub
+([`lordraw/llmproxy`](https://hub.docker.com/r/lordraw/llmproxy)):
+
+```bash
+docker run -d --name llmproxy \
+  --env-file .env \
+  -p 11434:11434 \
+  lordraw/llmproxy:latest
 ```
 
 ## Option C — Local Python
@@ -84,10 +96,13 @@ docker run -d --name llmproxy \
    python main.py
    ```
 
-   You should see:
+   You should see (the startup banner also reports whether inbound auth is on):
 
    ```
-   llmproxy in ascolto su http://0.0.0.0:11434 -> NVIDIA model: meta/llama-3.1-8b-instruct
+   llmproxy in ascolto su http://0.0.0.0:11434
+   Modelli esposti: meta/llama-3.1-8b-instruct, ...
+   Default: meta/llama-3.1-8b-instruct | log level=INFO | timezone log=Europe/Rome
+   Autenticazione in ingresso: disattivata
    ```
 
    > If `NVIDIA_API_KEY` is not set, the server still starts but prints a
@@ -96,9 +111,12 @@ docker run -d --name llmproxy \
 ## Verifying the installation
 
 ```bash
-# Liveness
+# Liveness (reports basic config too)
 curl http://localhost:11434/health
-# → {"status":"ok"}
+# → {"status":"ok","api_key_configured":true,"models":1,"default_model":"..."}
+
+# Liveness + live upstream check
+curl "http://localhost:11434/health?upstream=1"
 
 # Model list (Ollama style)
 curl http://localhost:11434/api/tags

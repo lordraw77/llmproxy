@@ -37,13 +37,44 @@ Key properties:
 The [`Dockerfile`](../Dockerfile) builds a small image:
 
 - Base: `python:3.12-slim`
-- Installs only `flask`, `requests`, `python-dotenv`
+- Installs `flask`, `requests`, `python-dotenv`, `gunicorn`
 - Runs as a **non-root user** (`appuser`)
 - Exposes port `11434`
-- Includes a `HEALTHCHECK` that polls `GET /` every 30s
+- Includes a `HEALTHCHECK` that polls `GET /health` every 30s
+- Serves the app under **gunicorn** (`gthread` workers) — SSE/NDJSON streaming
+  friendly — tunable via `WEB_CONCURRENCY`, `THREADS`, `GUNICORN_TIMEOUT`
 
 Because the healthcheck reads `PORT` from the environment, it stays correct even
 if you change the port.
+
+### Prebuilt image (Docker Hub)
+
+A prebuilt image is published as [`lordraw/llmproxy`](https://hub.docker.com/r/lordraw/llmproxy):
+
+```bash
+docker run -d --name llmproxy -p 11434:11434 --env-file .env \
+  lordraw/llmproxy:latest
+```
+
+Pin a specific version in production (e.g. `lordraw/llmproxy:1.2.3`) rather than
+`latest`. To point Compose at the published image, replace `build: .` with
+`image: lordraw/llmproxy:latest`.
+
+### Building & publishing (Makefile)
+
+The repository [`Makefile`](../Makefile) builds and publishes the image, deriving
+the version from **git tags**:
+
+```bash
+make build            # local build of :<version>
+git tag v1.2.3
+make release          # build + push :1.2.3 and :latest
+make buildx-release   # same, multi-arch, in one step
+make help             # list all targets
+```
+
+On an exact git tag the image is tagged `:<version>` **and** `:latest`; off a
+tag, `:latest` is left untouched. Override with `IMAGE`, `VERSION`, `PLATFORMS`.
 
 ## Common operational tasks
 
@@ -66,15 +97,12 @@ docker inspect --format '{{.State.Health.Status}}' llmproxy
 
 ## Production considerations
 
-llmproxy runs Flask's **built-in development server** (`app.run(...)`). It is set
-to `threaded=True`, which handles concurrent requests, but the development
-server is not hardened for high-load production use. For production-grade
-serving you may want to:
+The Docker image already serves llmproxy under **gunicorn** with `gthread`
+workers and a long timeout (streaming-friendly), tunable via `WEB_CONCURRENCY`,
+`THREADS`, and `GUNICORN_TIMEOUT`. (Running `python main.py` directly uses
+Flask's built-in development server with `threaded=True`, which is fine for local
+use but not hardened for high load.) For production you may also want to:
 
-- Put a **WSGI server** (e.g. gunicorn or uWSGI) in front of the Flask app.
-  Note that streaming endpoints rely on generator responses, so configure worker
-  types and timeouts accordingly (gunicorn's `gthread` workers with a long
-  `--timeout` are a reasonable starting point).
 - Place llmproxy behind a **reverse proxy** (nginx, Caddy, Traefik) for TLS
   termination and request buffering control. Disable proxy buffering on
   streaming routes so SSE / NDJSON is flushed to clients in real time
@@ -82,15 +110,20 @@ serving you may want to:
 
 ### Security
 
-llmproxy performs **no inbound authentication**. Anyone who can reach the port
-can send requests that consume your NVIDIA API quota. Therefore:
+llmproxy supports **optional inbound authentication**: set `PROXY_API_KEY` and
+every request (except `/` and `/health`) must present that key via
+`Authorization: Bearer <key>` or `X-Api-Key: <key>`. When it is empty the proxy
+is open and anyone who can reach the port can consume your NVIDIA API quota.
+Therefore:
 
-- Do **not** expose the port directly to the public internet.
-- Bind it to a private interface, or restrict access with a firewall, VPN, or an
+- Set `PROXY_API_KEY` when the proxy is reachable by anything other than trusted
+  local clients.
+- Do **not** expose the port directly to the public internet; also bind it to a
+  private interface, or restrict access with a firewall, VPN, or an
   authenticating reverse proxy.
-- Keep `.env` (and thus `NVIDIA_API_KEY`) out of version control and off shared
-  images. The `.dockerignore` should exclude it from the build context — verify
-  before publishing images.
+- Keep `.env` (and thus `NVIDIA_API_KEY` / `PROXY_API_KEY`) out of version
+  control and off shared images. The `.dockerignore` should exclude it from the
+  build context — verify before publishing images.
 
 ### Scaling
 

@@ -17,6 +17,13 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 > preserved and its JSON error body is forwarded verbatim (see
 > [Error responses](#error-responses) below).
 
+> **Inbound auth (optional):** if `PROXY_API_KEY` is set, every request (except
+> `/` and `/health`) must present it via `Authorization: Bearer <key>` or
+> `X-Api-Key: <key>`, otherwise the proxy replies
+> `401 {"error": {"message": "unauthorized", "type": "authentication_error"}}`.
+> When `PROXY_API_KEY` is empty the proxy is open. See
+> [Configuration → Security](configuration.md#security-considerations).
+
 ## Endpoint summary
 
 | Method | Path | Family | Streaming | Purpose |
@@ -27,12 +34,16 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 | POST | `/api/show` | Ollama | — | Model metadata |
 | POST | `/api/chat` | Ollama | ✅ (default on) | Chat completion |
 | POST | `/api/generate` | Ollama | ✅ (default on) | Prompt completion |
+| POST | `/api/embed` | Ollama | — | Embeddings (new format) |
+| POST | `/api/embeddings` | Ollama | — | Embeddings (legacy format) |
 | GET | `/v1/models` | OpenAI | — | Lists models |
+| GET | `/v1/models/<id>` | OpenAI | — | Single model detail (`404` if unknown) |
 | POST | `/v1/chat/completions` | OpenAI | ✅ (default off) | Chat completion (pass-through) |
 | POST | `/v1/completions` | OpenAI | ✅ (default off) | Text completion |
+| POST | `/v1/embeddings` | OpenAI | — | Embeddings (pass-through) |
 | POST | `/completion` | llama.cpp | ✅ (default off) | Native llama-server completion |
 | GET | `/props` | llama.cpp | — | Server properties |
-| GET | `/health` | Misc | — | Health check |
+| GET | `/health` | Misc | — | Health check (`?upstream=1` probes NVIDIA) |
 
 ---
 
@@ -118,7 +129,7 @@ Chat completion in Ollama format.
 | `model` | string | default model | Used if it matches an exposed model, else the default |
 | `messages` | array | `[]` | Chat messages (`{role, content}`), forwarded as-is |
 | `stream` | boolean | `true` | Streaming is **on by default** |
-| `options` | object | `{}` | Only `temperature` and `top_p` are forwarded |
+| `options` | object | `{}` | Sampling params are normalized and forwarded (see [note](#sampling-parameters)) |
 
 **Non-streaming response** (`stream: false`):
 
@@ -128,9 +139,14 @@ Chat completion in Ollama format.
   "created_at": "2026-07-23T10:00:00.000000Z",
   "message": { "role": "assistant", "content": "Hello!" },
   "done": true,
-  "done_reason": "stop"
+  "done_reason": "stop",
+  "prompt_eval_count": 18,
+  "eval_count": 25
 }
 ```
+
+When the upstream reports token usage, `prompt_eval_count` / `eval_count` are
+included (Ollama-style token counts).
 
 **Streaming response** (`application/x-ndjson`): one JSON object per line, each
 with a partial `message.content` and `"done": false`, followed by a final
@@ -148,7 +164,7 @@ Single-prompt completion in Ollama format.
 | `prompt` | string | `""` | User prompt |
 | `system` | string | — | Optional system message, prepended if present |
 | `stream` | boolean | `true` | Streaming is **on by default** |
-| `options` | object | `{}` | Only `temperature` and `top_p` are forwarded |
+| `options` | object | `{}` | Sampling params are normalized and forwarded (see [note](#sampling-parameters)) |
 
 **Non-streaming response:**
 
@@ -158,13 +174,54 @@ Single-prompt completion in Ollama format.
   "created_at": "2026-07-23T10:00:00.000000Z",
   "response": "…",
   "done": true,
-  "done_reason": "stop"
+  "done_reason": "stop",
+  "prompt_eval_count": 18,
+  "eval_count": 25
 }
 ```
 
+`prompt_eval_count` / `eval_count` are included when the upstream reports usage.
+
 **Streaming response** (`application/x-ndjson`): objects with a `response`
 string field and `"done": false`, ending with an empty `response` and
-`"done": true`.
+`"done": true` (the final object also carries the token counts when available).
+
+### `POST /api/embed`
+
+Embeddings in the newer Ollama format.
+
+**Request body:**
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `model` | string | `NVIDIA_EMBEDDINGS_MODEL` | Embeddings model; chat models are not valid here |
+| `input` | string \| string[] | `""` | Text(s) to embed |
+
+**Response:**
+
+```json
+{
+  "model": "nvidia/nv-embedqa-e5-v5",
+  "embeddings": [[0.0123, -0.0456, ...]]
+}
+```
+
+### `POST /api/embeddings`
+
+Embeddings in the legacy Ollama format (single vector).
+
+**Request body:**
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `model` | string | `NVIDIA_EMBEDDINGS_MODEL` | Embeddings model |
+| `prompt` | string | `""` | Text to embed |
+
+**Response:**
+
+```json
+{ "embedding": [0.0123, -0.0456, ...] }
+```
 
 ---
 
@@ -187,6 +244,22 @@ Lists every configured model (one `data` entry per `NVIDIA_MODELS` item).
       "owned_by": "nvidia"
     }
   ]
+}
+```
+
+### `GET /v1/models/<id>`
+
+Detail of a single model (some OpenAI SDKs query it). Returns `404` when the id
+is not one of the exposed models.
+
+**Response:**
+
+```json
+{
+  "id": "meta/llama-3.1-8b-instruct",
+  "object": "model",
+  "created": 1753257600,
+  "owned_by": "nvidia"
 }
 ```
 
@@ -217,8 +290,7 @@ Legacy OpenAI text-completions endpoint.
 | `model` | string | default model | Used if it matches an exposed model, else the default |
 | `prompt` | string \| string[] | `""` | If a list, elements are concatenated |
 | `stream` | boolean | `false` | |
-| `temperature` | number | — | Forwarded if present |
-| `top_p` | number | — | Forwarded if present |
+| sampling | number/… | — | `temperature`, `top_p`, `max_tokens`, `stop`, … forwarded if present (see [note](#sampling-parameters)) |
 
 The prompt is wrapped into a single user message before being sent upstream.
 
@@ -233,15 +305,30 @@ The prompt is wrapped into a single user message before being sent upstream.
   "choices": [
     { "text": "…", "index": 0, "logprobs": null, "finish_reason": "stop" }
   ],
-  "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+  "usage": { "prompt_tokens": 18, "completion_tokens": 25, "total_tokens": 43 }
 }
 ```
 
-> **Note:** token usage counts are always reported as `0`; llmproxy does not
-> compute them.
+> **Note:** `usage` reflects the upstream token counts when available; it falls
+> back to zeros only if the upstream omits them.
 
 **Streaming response** (`text/event-stream`): `data:`-prefixed JSON chunks with
 `choices[].text`, terminated by `data: [DONE]`.
+
+### `POST /v1/embeddings`
+
+OpenAI-format embeddings, forwarded to the upstream `/embeddings`.
+
+**Request body:**
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `model` | string | `NVIDIA_EMBEDDINGS_MODEL` | Embeddings model |
+| `input` | string \| string[] | — | Text(s) to embed |
+| `input_type` | string | `EMBEDDINGS_INPUT_TYPE` | Added when the client omits it (`query`/`passage`) |
+
+**Response:** the upstream OpenAI embeddings response (`data[].embedding`,
+`usage`, …), with `model` set to the resolved model.
 
 ---
 
@@ -258,8 +345,7 @@ Native `llama-server` completion endpoint.
 | `model` | string | default model | Used if it matches an exposed model, else the default |
 | `prompt` | string | `""` | User prompt |
 | `stream` | boolean | `false` | |
-| `temperature` | number | — | Forwarded if present |
-| `top_p` | number | — | Forwarded if present |
+| sampling | number/… | — | `temperature`, `top_p`, `max_tokens`/`n_predict`, `stop`, … forwarded if present (see [note](#sampling-parameters)) |
 
 **Non-streaming response:**
 
@@ -270,10 +356,13 @@ Native `llama-server` completion endpoint.
   "prompt": "…",
   "stop": true,
   "stopped_eos": true,
-  "tokens_predicted": 0,
-  "tokens_evaluated": 0
+  "tokens_predicted": 25,
+  "tokens_evaluated": 18
 }
 ```
+
+`tokens_predicted` / `tokens_evaluated` reflect the upstream token counts when
+available (otherwise `0`).
 
 **Streaming response** (`text/event-stream`): `data:`-prefixed JSON chunks with
 `content` and `"stop": false`, ending with an empty-content object where
@@ -300,13 +389,39 @@ Server properties, as reported by `llama-server`.
 
 ### `GET /health`
 
+Liveness plus basic configuration.
+
 **Response:**
 
 ```json
-{ "status": "ok" }
+{
+  "status": "ok",
+  "api_key_configured": true,
+  "models": 3,
+  "default_model": "meta/llama-3.1-8b-instruct"
+}
 ```
 
-Note: the Docker `HEALTHCHECK` uses `GET /` rather than `/health`.
+With `?upstream=1` it also probes NVIDIA (`GET /models`) and adds an `upstream`
+field (`ok` / `error:<code>` / `unreachable`); if the provider is unreachable the
+`status` becomes `degraded` and the endpoint returns HTTP `503`.
+
+Note: the Docker `HEALTHCHECK` polls `GET /health`.
+
+---
+
+## Sampling parameters
+
+For the Ollama, `/v1/completions`, and `/completion` endpoints, sampling
+parameters are **normalized** before being forwarded upstream. These keys are
+passed through when present: `temperature`, `top_p`, `max_tokens`, `stop`,
+`presence_penalty`, `frequency_penalty`, `seed`, `n`. Ollama's `num_predict` and
+llama.cpp's `n_predict` are mapped to `max_tokens`. Keys the upstream OpenAI
+schema does not accept (e.g. `top_k`) are dropped to avoid a `400`.
+
+`/v1/chat/completions` is different: it forwards the **entire** request payload
+verbatim (only `model` and `stream` are overridden), so any OpenAI parameter is
+passed through unchanged.
 
 ---
 
@@ -314,6 +429,7 @@ Note: the Docker `HEALTHCHECK` uses `GET /` rather than `/health`.
 
 | Situation | Status | Body |
 |-----------|--------|------|
+| Missing/invalid inbound key (when `PROXY_API_KEY` is set) | `401` | `{"error": {"message": "unauthorized", "type": "authentication_error"}}` |
 | `NVIDIA_API_KEY` not set | `500` | `{"error": "NVIDIA_API_KEY non configurata nel file .env"}` |
 | Upstream provider returned an error | **upstream status** | The provider's JSON error body, **forwarded verbatim** |
 | Upstream returned a non-JSON error | upstream status | `{"error": {"message": "<raw text>", "type": "upstream_error", "code": <status>}}` |

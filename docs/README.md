@@ -9,7 +9,10 @@ transparently **forwards every request to NVIDIA's OpenAI-compatible API**
 
 This lets any tool that already speaks Ollama, OpenAI, or llama.cpp talk to a
 NVIDIA-hosted model **without any client-side changes** — you simply point the
-client at llmproxy instead of at a real local runtime.
+client at llmproxy instead of at a real local runtime. It covers chat,
+completions, and **embeddings**, supports streaming, multi-model discovery,
+optional inbound authentication, and automatic retries on transient upstream
+errors.
 
 ```
 ┌──────────────┐     Ollama / OpenAI / llama.cpp      ┌──────────┐   OpenAI    ┌───────────────────┐
@@ -40,13 +43,18 @@ client at llmproxy instead of at a real local runtime.
 cp .env.example .env
 # edit .env and set NVIDIA_API_KEY
 
-# 2. Run with Docker Compose
+# 2. Run with Docker Compose (or the prebuilt image)
 docker compose up -d
+# or: docker run -d -p 11434:11434 --env-file .env lordraw/llmproxy:latest
 
 # 3. Test it
 curl http://localhost:11434/
 # → "Ollama is running"
 ```
+
+The prebuilt image is published on Docker Hub as
+[`lordraw/llmproxy`](https://hub.docker.com/r/lordraw/llmproxy); see
+[Deployment](deployment.md) for building and publishing with the `Makefile`.
 
 ## License
 

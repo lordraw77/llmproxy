@@ -68,10 +68,45 @@ curl http://localhost:11434/completion -d '{
 }'
 ```
 
+### Embeddings (OpenAI)
+
+```bash
+curl http://localhost:11434/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model": "nvidia/nv-embedqa-e5-v5", "input": "Hello embeddings world."}'
+```
+
+### Embeddings (Ollama)
+
+```bash
+# New format
+curl http://localhost:11434/api/embed \
+  -d '{"input": "Hello from /api/embed."}'
+
+# Legacy format
+curl http://localhost:11434/api/embeddings \
+  -d '{"prompt": "Hello from /api/embeddings."}'
+```
+
+If you omit `model`, llmproxy uses `NVIDIA_EMBEDDINGS_MODEL` (chat models are not
+valid for embeddings). See [Configuration](configuration.md).
+
+### With inbound authentication
+
+If the proxy is started with `PROXY_API_KEY`, send the key on every request:
+
+```bash
+curl http://localhost:11434/v1/models \
+  -H "Authorization: Bearer $PROXY_API_KEY"
+# or:  -H "X-Api-Key: $PROXY_API_KEY"
+```
+
 ## Python — OpenAI SDK
 
-Point the official OpenAI SDK at llmproxy by overriding `base_url`. The API key
-is not validated by llmproxy, so any non-empty string works.
+Point the official OpenAI SDK at llmproxy by overriding `base_url`. Unless the
+proxy is protected with `PROXY_API_KEY`, the API key is not validated, so any
+non-empty string works. When `PROXY_API_KEY` is set, pass it as the `api_key`
+(it is sent as `Authorization: Bearer …`).
 
 ```python
 from openai import OpenAI
@@ -139,6 +174,9 @@ See [Configuration → Multi-model support](configuration.md#multi-model-support
   `model` field is honored when it matches an exposed model; otherwise the
   default (first in the list) is used. See
   [Configuration → Multi-model support](configuration.md#multi-model-support).
-- Only `temperature` and `top_p` are honored on the Ollama, `/v1/completions`,
-  and `/completion` endpoints. For full parameter pass-through, use
-  `/v1/chat/completions`.
+- On the Ollama, `/v1/completions`, and `/completion` endpoints a normalized set
+  of sampling params is forwarded (`temperature`, `top_p`, `max_tokens`, `stop`,
+  `presence_penalty`, `frequency_penalty`, `seed`, `n`; `num_predict`/`n_predict`
+  map to `max_tokens`). For full parameter pass-through, use
+  `/v1/chat/completions`. See
+  [API Reference → Sampling parameters](api-reference.md#sampling-parameters).

@@ -55,7 +55,7 @@ A typical successful, non-streaming request produces:
 
 ```
 2026-07-23 17:24:01 CEST [INFO] [85c9fc1b] --> POST /v1/chat/completions | client=172.18.0.1 model=meta/llama-3.1-8b-instruct stream=False
-2026-07-23 17:24:01 CEST [INFO] [85c9fc1b] -> NVIDIA request | model=meta/llama-3.1-8b-instruct stream=False messages=1 input_chars=42
+2026-07-23 17:24:01 CEST [INFO] [85c9fc1b] -> NVIDIA request | path=/chat/completions model=meta/llama-3.1-8b-instruct stream=False messages=1 input_chars=42
 2026-07-23 17:24:02 CEST [INFO] [85c9fc1b] <- NVIDIA response | status=200 latency=780ms stream=False
 2026-07-23 17:24:02 CEST [INFO] [85c9fc1b] telemetry | prompt_tokens=18 completion_tokens=25 total_tokens=43 latency=780ms
 2026-07-23 17:24:02 CEST [INFO] [85c9fc1b] <-- POST /v1/chat/completions | status=200 duration=782ms
@@ -66,7 +66,7 @@ Line by line:
 | Line | Meaning |
 |------|---------|
 | `-->` | **Incoming request**: method, path, client IP, requested model and `stream` flag. |
-| `-> NVIDIA request` | **Upstream call**: resolved model, stream flag, number of messages, total input characters. |
+| `-> NVIDIA request` | **Upstream call**: upstream path (`/chat/completions` or `/embeddings`), resolved model, stream flag, number of messages, total input characters. |
 | `<- NVIDIA response` | **Upstream status & latency**: the HTTP status NVIDIA returned and the time to first response. |
 | `telemetry` | **Token usage** from the upstream `usage` object (non-streaming only), with latency. |
 | `<--` | **End-to-end**: final client-facing status and total request duration. |
@@ -74,8 +74,16 @@ Line by line:
 ### Streaming requests
 
 For streaming responses the upstream `latency` is the **time to first byte**
-(headers), since the body is streamed. Token usage is not logged, because
-providers don't return a `usage` object on streamed responses.
+(headers), since the body is streamed. llmproxy requests
+`stream_options.include_usage` from the upstream, so when the provider emits a
+final `usage` object it is logged too, as a dedicated line:
+
+```
+2026-07-23 17:24:05 CEST [INFO] [85c9fc1b] telemetry (stream) | prompt_tokens=18 completion_tokens=40 total_tokens=58
+```
+
+If the provider omits `usage` on a streamed response, no telemetry line is
+emitted for it.
 
 ### Error cases
 
@@ -91,10 +99,21 @@ An upstream error (propagated to the client — see
 2026-07-23 17:25:10 CEST [WARNING] [a1b2c3d4] <-- POST /v1/chat/completions | status=404 duration=121ms
 ```
 
-An unreachable upstream (timeout / DNS / connection refused) logs at `ERROR`:
+An unreachable upstream (timeout / DNS / connection refused) logs at `ERROR`
+(after any retries are exhausted):
 
 ```
 2026-07-23 17:26:00 CEST [ERROR] [b2c3d4e5] <- NVIDIA no-response after 120000ms | HTTPSConnectionPool(...): Read timed out
+```
+
+### Retries
+
+Transient upstream failures (network errors, `429`, `5xx`) are retried per
+`RETRY_MAX` / `RETRY_BACKOFF` (see [Configuration](configuration.md)). Each retry
+logs a `WARNING` with the attempt number and the delay before the next try:
+
+```
+2026-07-23 17:27:00 CEST [WARNING] [c3d4e5f6] <- NVIDIA status=429 dopo 90ms (tentativo 1/3), retry tra 0.5s
 ```
 
 ## Startup banner

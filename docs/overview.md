@@ -43,8 +43,16 @@ changing the base URL is required.
 | OpenAI `/v1/completions` | `prompt` wrapped into a single user message |
 | llama.cpp `/completion` | `prompt` wrapped into a single user message |
 
-Only `temperature` and `top_p` options are forwarded to the upstream when
-present (except on `/v1/chat/completions`, which forwards the whole payload).
+Sampling options (`temperature`, `top_p`, `max_tokens`, `stop`,
+`presence_penalty`, `frequency_penalty`, `seed`, `n`) are normalized and
+forwarded when present; Ollama's `num_predict` / llama.cpp's `n_predict` map to
+`max_tokens`. The `/v1/chat/completions` endpoint forwards the whole payload
+verbatim. See [API Reference → Sampling parameters](api-reference.md#sampling-parameters).
+
+In addition to chat/completions, llmproxy exposes **embeddings** in both OpenAI
+(`/v1/embeddings`) and Ollama (`/api/embed`, `/api/embeddings`) shapes, relayed
+to the upstream `/embeddings` endpoint with a dedicated default model
+(`NVIDIA_EMBEDDINGS_MODEL`).
 
 ### Streaming
 
@@ -57,7 +65,10 @@ Both streaming and non-streaming responses are supported:
   (`data: [DONE]`).
 
 Internally, `iter_nvidia_sse()` parses the upstream SSE stream and yields the
-text of each content delta, which is then re-wrapped in the target format.
+text of each content delta, which is then re-wrapped in the target format. It
+also requests `stream_options.include_usage` upstream, so the final token usage
+is captured, logged, and (on the Ollama endpoints) re-exposed in the closing
+chunk.
 
 ## Architecture
 
@@ -70,14 +81,20 @@ main.py
 ├── Helpers
 │   ├── now_iso()                  → RFC3339 timestamp
 │   ├── nvidia_headers()           → Authorization + Content-Type
+│   ├── build_sampling_params()    → normalize Ollama/OpenAI sampling options
 │   ├── call_nvidia()              → build messages payload, POST upstream
 │   ├── call_nvidia_passthrough()  → forward an OpenAI payload verbatim
-│   └── iter_nvidia_sse()          → parse upstream SSE deltas
+│   ├── call_nvidia_embeddings()   → POST the upstream /embeddings
+│   ├── _post_upstream()           → POST with timeout + retry/backoff
+│   ├── _check_auth()              → optional inbound PROXY_API_KEY check
+│   └── iter_nvidia_sse()          → parse upstream SSE deltas (+ usage)
 ├── Error handling
 │   └── handle_nvidia_error()      → map upstream errors to JSON + status
 └── Routes
-    ├── Ollama:    /, /api/version, /api/tags, /api/show, /api/chat, /api/generate
-    ├── OpenAI:    /v1/models, /v1/chat/completions, /v1/completions
+    ├── Ollama:    /, /api/version, /api/tags, /api/show, /api/chat,
+    │              /api/generate, /api/embed, /api/embeddings
+    ├── OpenAI:    /v1/models, /v1/models/<id>, /v1/chat/completions,
+    │              /v1/completions, /v1/embeddings
     ├── llama.cpp: /completion, /props
     └── Misc:      /health
 ```
@@ -90,9 +107,14 @@ main.py
   models are advertised by the discovery endpoints, and each request is served
   by the client-requested model when it matches, otherwise the default. This
   makes llmproxy work with clients such as Open WebUI that offer a model picker.
-- **Threaded Flask server** — `app.run(..., threaded=True)` handles concurrent
-  requests. This is the built-in development server; see
-  [Deployment](deployment.md) for production notes.
+- **Resilient upstream calls** — every upstream request has a configurable
+  timeout (`UPSTREAM_TIMEOUT`) and automatic retry with exponential backoff on
+  transient failures (network errors, `429`, `5xx`), honouring `Retry-After`.
+- **Optional inbound auth** — when `PROXY_API_KEY` is set, a `before_request`
+  hook enforces it on every path except `/` and `/health`.
+- **Threaded server** — locally, `app.run(..., threaded=True)` handles
+  concurrent requests; the Docker image serves the app under gunicorn with
+  threaded workers. See [Deployment](deployment.md).
 
 ## Technology stack
 
@@ -101,4 +123,5 @@ main.py
 | [Flask](https://flask.palletsprojects.com/) | HTTP server and routing |
 | [requests](https://requests.readthedocs.io/) | Upstream HTTP calls to NVIDIA |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | Loads `.env` configuration |
+| [gunicorn](https://gunicorn.org/) | Production WSGI server (Docker image) |
 | Python 3.12 | Runtime (per the Docker image) |

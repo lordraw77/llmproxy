@@ -30,13 +30,25 @@ Common causes:
 If the upstream body is not JSON, llmproxy wraps the raw text in an `error`
 object (`type: "upstream_error"`) while still preserving the status code.
 
+## `401 {"error": {"message": "unauthorized", ...}}`
+
+Inbound authentication is enabled (`PROXY_API_KEY` is set) and the request did
+not present a valid key.
+
+**Fix:** send the key via `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
+`/` and `/health` are always exempt. To disable auth, unset `PROXY_API_KEY` and
+restart.
+
 ## `502 {"error": {"message": ..., "type": "upstream_request_error"}}`
 
 llmproxy could not get any response from the provider. This covers connection
-failures, DNS errors, and timeouts (the upstream call has a 120s timeout, so a
-very large or slow request can exceed it).
+failures, DNS errors, and timeouts (the upstream call uses `UPSTREAM_TIMEOUT`,
+default 120s, so a very large or slow request can exceed it). Transient failures
+(network errors, `429`, `5xx`) are retried first per `RETRY_MAX`/`RETRY_BACKOFF`;
+a `502` means every attempt failed.
 
-**Fix:** check network/DNS connectivity to `NVIDIA_API_BASE`, then retry.
+**Fix:** check network/DNS connectivity to `NVIDIA_API_BASE`, raise
+`UPSTREAM_TIMEOUT` for very slow requests, then retry.
 
 ## The client can't reach the server / connection refused
 
@@ -70,12 +82,14 @@ it.
 ## My sampling parameters have no effect
 
 On the Ollama endpoints (`/api/chat`, `/api/generate`), `/v1/completions`, and
-`/completion`, only `temperature` and `top_p` are forwarded upstream. All other
-parameters are dropped.
+`/completion`, a normalized subset is forwarded upstream: `temperature`,
+`top_p`, `max_tokens`, `stop`, `presence_penalty`, `frequency_penalty`, `seed`,
+`n` (with `num_predict`/`n_predict` mapped to `max_tokens`). Parameters outside
+this set (e.g. `top_k`) are dropped so the upstream doesn't reject the request.
 
-If you need full parameter pass-through (`max_tokens`, `stop`, `tools`, …), use
-the **`/v1/chat/completions`** endpoint, which forwards the whole payload
-verbatim.
+If you need full parameter pass-through (`tools`, `response_format`, …), use the
+**`/v1/chat/completions`** endpoint, which forwards the whole payload verbatim.
+See [API Reference → Sampling parameters](api-reference.md#sampling-parameters).
 
 ## Streaming output arrives all at once
 
@@ -85,14 +99,16 @@ Something between the client and llmproxy is buffering the stream:
 - Behind a reverse proxy, disable response buffering for streaming routes
   (e.g. nginx `proxy_buffering off;`). See [Deployment](deployment.md).
 
-## Token usage is always zero
+## Token usage is reported as zero
 
-llmproxy does not compute token counts. `/v1/completions` and `/completion`
-report `0` for all usage/token fields. This is by design and not an error.
+Token counts come from the upstream `usage` object and are re-exposed
+(`usage`, `prompt_eval_count`/`eval_count`, `tokens_predicted`/`tokens_evaluated`
+depending on the endpoint). If they are `0`, the upstream did not return usage
+for that request (some models/streaming modes omit it) — not a llmproxy bug.
 
 ## The Docker healthcheck shows `unhealthy`
 
-The healthcheck polls `GET /` on the container's `PORT`. If it fails:
+The healthcheck polls `GET /health` on the container's `PORT`. If it fails:
 
 - Check logs: `docker compose logs -f llmproxy`.
 - Ensure the app actually started (a Python import error would prevent it).
@@ -109,10 +125,13 @@ docker compose restart llmproxy
 
 ## Seeing the startup banner
 
-On a healthy local start you should see:
+On a healthy local start you should see (last line reports inbound auth state):
 
 ```
-llmproxy in ascolto su http://0.0.0.0:11434 -> NVIDIA model: meta/llama-3.1-8b-instruct
+llmproxy in ascolto su http://0.0.0.0:11434
+Modelli esposti: meta/llama-3.1-8b-instruct, ...
+Default: meta/llama-3.1-8b-instruct | log level=INFO | timezone log=Europe/Rome
+Autenticazione in ingresso: disattivata
 ```
 
 If instead you see `Attenzione: NVIDIA_API_KEY non impostata in .env`, the key
