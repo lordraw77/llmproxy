@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(chmod +x /opt/llmproxy/scripts/test_models.sh)",
+      "Bash(chmod +x /opt/llmproxy/scripts/tests.sh)",
+      "Bash(bash -n /opt/llmproxy/scripts/tests.sh)",
+      "Bash(/opt/llmproxy/scripts/tests.sh --list)",
+      "Bash(mv /opt/fakellm /opt/llmproxy)",
+      "Read(//opt/**)"
+    ]
+  }
+}

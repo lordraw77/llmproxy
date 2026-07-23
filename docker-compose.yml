@@ -1,0 +1,10 @@
+---
+services:
+  llmproxy:
+    build: .
+    container_name: llmproxy
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-11434}:${PORT:-11434}"
