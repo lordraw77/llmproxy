@@ -256,12 +256,18 @@ class NvidiaUpstream:
         non-streaming upstream response.
         """
         usage = {}
-        parts = [piece for piece in iter_nvidia_sse(resp, usage)]
+        meta = {}
+        parts = [piece for piece in iter_nvidia_sse(resp, usage, meta)]
         content = "".join(parts)
+        tool_calls = meta.get("tool_calls")
+        finish_reason = meta.get("finish_reason") or ("tool_calls" if tool_calls else "stop")
 
         # Reconstructed content: debug only (mirrors the request payload log).
         if self._logger.isEnabledFor(logging.DEBUG):
-            self._logger.debug("[%s] <- NVIDIA response body (aggregated): %s", rid, json.dumps(content)[:2000])
+            self._logger.debug(
+                "[%s] <- NVIDIA response body (aggregated): content=%s tool_calls=%s",
+                rid, json.dumps(content)[:2000], json.dumps(tool_calls)[:2000],
+            )
 
         if not usage:
             usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -273,6 +279,9 @@ class NvidiaUpstream:
             usage.get("total_tokens"), elapsed_ms,
         )
 
+        message = {"role": "assistant", "content": content or None}
+        if tool_calls:
+            message["tool_calls"] = tool_calls
         data = {
             "id": "chatcmpl-llmproxy",
             "object": "chat.completion",
@@ -280,9 +289,9 @@ class NvidiaUpstream:
             "model": model,
             "choices": [{
                 "index": 0,
-                "message": {"role": "assistant", "content": content},
+                "message": message,
                 "logprobs": None,
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }],
             "usage": usage,
         }

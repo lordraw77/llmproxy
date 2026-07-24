@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.4] - 2026-07-24
+
+### Fixed
+
+- **Tool calls dropped on aggregated (`FORCE_UPSTREAM_STREAM`) responses**: when
+  a non-streaming request carried a `tool_choice`/function call and the proxy
+  re-aggregated the upstream SSE stream, only `delta.content` was collected, so
+  the reconstructed `chat.completion` had an empty `content`, no `tool_calls`,
+  and a hardcoded `finish_reason: "stop"` — the caller never received the tool
+  call despite non-zero `completion_tokens`. The SSE parser now also reassembles
+  the incremental `delta.tool_calls` fragments (accumulating `arguments` per
+  index) and preserves the upstream `finish_reason` (e.g. `"tool_calls"`), which
+  are carried back into the aggregated message. Streaming passthrough and
+  plain-text replies are unchanged.
+
 ## [1.1.3] - 2026-07-24
 
 ### Added
