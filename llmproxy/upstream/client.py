@@ -227,9 +227,13 @@ class NvidiaUpstream:
         elif not stream:
             # Token telemetry (available only for non-streaming responses here).
             try:
-                usage = resp_json(resp).get("usage") or {}
+                body = resp_json(resp)
             except ValueError:
-                usage = {}
+                body = {}
+            # Full response body: debug only (mirrors the request payload log).
+            if body and logger.isEnabledFor(logging.DEBUG):
+                logger.debug("[%s] <- NVIDIA response body: %s", rid, json.dumps(body)[:2000])
+            usage = body.get("usage") or {}
             if usage:
                 if self._metrics is not None:
                     self._metrics.record_tokens(usage)
@@ -254,6 +258,10 @@ class NvidiaUpstream:
         usage = {}
         parts = [piece for piece in iter_nvidia_sse(resp, usage)]
         content = "".join(parts)
+
+        # Reconstructed content: debug only (mirrors the request payload log).
+        if self._logger.isEnabledFor(logging.DEBUG):
+            self._logger.debug("[%s] <- NVIDIA response body (aggregated): %s", rid, json.dumps(content)[:2000])
 
         if not usage:
             usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `/embeddings`, `/models` and `/models/<id>` are now served alongside their
   `/v1/*` equivalents, for clients configured with a base URL that omits `/v1`
   (previously a `404`).
+- **`DEBUG` logging of the upstream response body**, mirroring the existing
+  request-payload log: `<- NVIDIA response body` for non-streaming replies and
+  `<- NVIDIA response body (aggregated)` for `FORCE_UPSTREAM_STREAM` responses
+  re-assembled from the SSE stream (both truncated to 2000 chars).
 
 ## [1.1.2] - 2026-07-24
 
