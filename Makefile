@@ -104,6 +104,10 @@ endif
 release: guard-tag build push ## Build + push (:VERSION e :latest); richiede un tag git
 	@echo "Release $(IMAGE_VERSION) completata."
 
+.PHONY: publish
+publish: build push 
+	@echo "Publish $(IMAGE_VERSION) completata."
+
 .PHONY: buildx-release
 buildx-release: guard-tag ## Build + push multi-arch ($(PLATFORMS)) in un unico passaggio
 	docker buildx build --platform $(PLATFORMS) $(LABELS) \

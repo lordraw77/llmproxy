@@ -7,6 +7,7 @@ the application that talks to the network towards the provider.
 
 import json
 import logging
+import os
 import time
 
 import requests
@@ -77,6 +78,14 @@ class NvidiaUpstream:
         )
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
+        # Outbound egress proxy. When set explicitly it is applied to the
+        # session; NO_PROXY is exported to the environment so requests' own
+        # bypass logic (trust_env stays on) keeps honoring it for both the
+        # session and the health-check GET below.
+        if settings.proxies:
+            self._session.proxies.update(settings.proxies)
+        if settings.no_proxy and "NO_PROXY" not in os.environ:
+            os.environ["NO_PROXY"] = settings.no_proxy
 
     @property
     def headers(self):
@@ -85,7 +94,12 @@ class NvidiaUpstream:
 
     def get(self, path, timeout):
         """Bare GET against the upstream (used by the health check)."""
-        return requests.get(f"{self._settings.nvidia_api_base}{path}", headers=self._headers, timeout=timeout)
+        return requests.get(
+            f"{self._settings.nvidia_api_base}{path}",
+            headers=self._headers,
+            timeout=timeout,
+            proxies=self._settings.proxies,
+        )
 
     def _retry_delay(self, attempt, retry_after=None):
         """Compute the delay before the next attempt.

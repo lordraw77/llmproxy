@@ -73,6 +73,15 @@ See [Forcing upstream streaming](configuration.md#forcing-upstream-streaming).
 **Fix (alternative):** raise `UPSTREAM_TIMEOUT` (e.g. `300`) to give slow
 generations more headroom.
 
+### Hangs with no `<- NVIDIA response` line (egress proxy)
+
+If the log shows the `-> NVIDIA payload` but **never** a `<- NVIDIA response`,
+and eventually times out, the host likely reaches the internet only through a
+corporate proxy. A `curl` from the host works (the shell inherits the proxy
+variables) but the container connects directly and stalls. Set
+`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` in `.env` — see
+[Outbound proxy](configuration.md#outbound-proxy).
+
 **Other 502 causes:** check network/DNS connectivity to `NVIDIA_API_BASE`, then
 retry.
 

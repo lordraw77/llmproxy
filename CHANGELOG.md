@@ -16,9 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   generations. The stream is transparently re-aggregated into a single
   `chat.completion` object, so caller behavior is unchanged. Fixes the common
   `502 upstream_request_error` (`Read timed out`) on slow reasoning/large models.
+- **Outbound proxy support** via `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`,
+  applied to the pooled upstream session and the health-check probe. Needed on
+  hosts that reach the internet only through a corporate egress proxy, where the
+  container otherwise connects directly and every upstream request hangs until
+  `UPSTREAM_TIMEOUT`.
 
 ### Changed
 
+- The `-> NVIDIA request` log line now reports the stream flag actually sent
+  upstream (marked `(forced, aggregated)` when `FORCE_UPSTREAM_STREAM` rewrote
+  a non-streaming request), instead of the caller's original flag.
 - Documented that `UPSTREAM_TIMEOUT` is a *read* timeout and that read timeouts
   are retried (total wait `(RETRY_MAX + 1) × UPSTREAM_TIMEOUT`).
 
