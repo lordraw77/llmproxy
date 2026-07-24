@@ -19,6 +19,7 @@ All configuration is provided through environment variables, typically via a
 | `PROXY_API_KEY` | *(empty)* | No | If set, **inbound authentication** is enabled: every request must present this key via `Authorization: Bearer <key>` or `X-Api-Key: <key>`. `/` and `/health` stay open for health-checks. Empty = proxy is open (historic behavior). See [Security considerations](#security-considerations). |
 | `UPSTREAM_TIMEOUT` | `120` | No | Read timeout in seconds for calls to the upstream API. For **non-streaming** requests no bytes arrive until the whole completion is generated, so slow models (reasoning, large, or queued) can exceed the default — raise it, or enable `FORCE_UPSTREAM_STREAM`. |
 | `FORCE_UPSTREAM_STREAM` | `false` | No | When truthy (`1`/`true`/`yes`/`on`), the proxy always requests `stream=true` from the upstream on `/chat/completions`, even if the caller asked for a non-streaming reply. The upstream keeps sending SSE bytes so the read timeout never trips; if the caller wanted a single JSON response the proxy transparently re-aggregates the stream into one `chat.completion`. **Caller behavior is unchanged.** See [Forcing upstream streaming](#forcing-upstream-streaming). |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | *(empty)* | No | Outbound egress proxy used to reach the upstream, for hosts that can only access the internet through a corporate proxy. Standard `requests` proxy variables (upper- or lower-case). Without them, a proxied host connects directly and every upstream request hangs until `UPSTREAM_TIMEOUT`. See [Outbound proxy](#outbound-proxy). |
 | `RETRY_MAX` | `2` | No | Number of retries (beyond the first attempt) on transient upstream failures — network errors and HTTP `429`/`5xx`. `0` disables retries. Note: a read timeout counts as a network error and is retried, so with slow non-streaming generations the total wait is `(RETRY_MAX + 1) × UPSTREAM_TIMEOUT`. |
 | `RETRY_BACKOFF` | `0.5` | No | Base of the exponential backoff (seconds) between retries. A `Retry-After` header from the upstream takes precedence when present. |
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | No | Model used by the embeddings endpoints when the client does not specify one (chat models are not valid for `/embeddings`). |
@@ -46,6 +47,28 @@ UPSTREAM_TIMEOUT=300
 # Always stream towards the upstream (transparent to the caller). Avoids read timeouts.
 FORCE_UPSTREAM_STREAM=on
 ```
+
+## Outbound proxy
+
+On hosts that reach the internet only through a corporate egress proxy, the
+upstream calls will **hang until `UPSTREAM_TIMEOUT`** unless the proxy is
+configured — the symptom is a request that logs the NVIDIA payload but never a
+`<- NVIDIA response` line. A `curl` from the host may still work because the
+shell inherits the proxy variables; the container does not.
+
+Set the standard proxy variables (they are applied to the pooled upstream
+session and the health-check probe, and `requests` also honors them natively):
+
+```dotenv
+HTTP_PROXY=http://egress-proxy.example.com:80
+HTTPS_PROXY=http://egress-proxy.example.com:80
+NO_PROXY=localhost,127.0.0.1,.internal.example.com,10.0.0.0/8
+```
+
+Because `docker-compose.yml` loads the `.env` via `env_file`, these end up in
+the container environment automatically — no change to the compose file is
+needed. Always keep `localhost,127.0.0.1` in `NO_PROXY` so the container's own
+health check is not routed through the proxy.
 
 ## Forcing upstream streaming
 

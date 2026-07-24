@@ -58,6 +58,23 @@ class Settings:
     # the caller (a non-streaming client still gets a single JSON response).
     force_upstream_stream: bool = False
 
+    # Outbound HTTP proxy for reaching the upstream (corporate egress proxy).
+    # Empty = no explicit proxy (``requests`` still honors the ambient
+    # HTTP(S)_PROXY / NO_PROXY environment via ``trust_env``).
+    http_proxy: str = ""
+    https_proxy: str = ""
+    no_proxy: str = ""
+
+    @property
+    def proxies(self):
+        """A ``requests``-style proxies mapping, or ``None`` when none is set."""
+        mapping = {}
+        if self.http_proxy:
+            mapping["http"] = self.http_proxy
+        if self.https_proxy:
+            mapping["https"] = self.https_proxy
+        return mapping or None
+
     # Inbound authentication.
     proxy_api_key: str = ""
     auth_exempt_paths: frozenset = field(default_factory=lambda: frozenset({"/", "/health"}))
@@ -100,6 +117,10 @@ def load_settings():
         pool_size=pool_size,
         force_upstream_stream=os.environ.get("FORCE_UPSTREAM_STREAM", "false").strip().lower()
         in ("1", "true", "yes", "on"),
+        # Accept the conventional upper- and lower-case proxy env var names.
+        http_proxy=os.environ.get("HTTP_PROXY", os.environ.get("http_proxy", "")).strip(),
+        https_proxy=os.environ.get("HTTPS_PROXY", os.environ.get("https_proxy", "")).strip(),
+        no_proxy=os.environ.get("NO_PROXY", os.environ.get("no_proxy", "")).strip(),
         retry_max=int(os.environ.get("RETRY_MAX", "2")),
         retry_backoff=float(os.environ.get("RETRY_BACKOFF", "0.5")),
         proxy_api_key=os.environ.get("PROXY_API_KEY", "").strip(),
