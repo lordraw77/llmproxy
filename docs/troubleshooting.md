@@ -47,8 +47,34 @@ default 120s, so a very large or slow request can exceed it). Transient failures
 (network errors, `429`, `5xx`) are retried first per `RETRY_MAX`/`RETRY_BACKOFF`;
 a `502` means every attempt failed.
 
-**Fix:** check network/DNS connectivity to `NVIDIA_API_BASE`, raise
-`UPSTREAM_TIMEOUT` for very slow requests, then retry.
+### Read timeout on non-streaming requests
+
+The most common cause is a **non-streaming** request (`stream: false`) to a slow
+model. In the logs it looks like this:
+
+```
+--> POST /v1/chat/completions | model=nvidia/nemotron-... stream=False
+<- NVIDIA no-response after 120112ms (tentativo 1/3) ... Read timed out
+<- NVIDIA no-response after 120098ms (tentativo 2/3) ... Read timed out
+<- NVIDIA no-response after 120129ms ... Read timed out
+<-- POST /v1/chat/completions | status=502 duration=361847ms
+```
+
+With `stream: false` the provider sends **no bytes** until the whole completion
+is ready, so the read timeout trips even though the same model streams fine via
+`curl` with `stream: true`. Note the ~6-minute total: a read timeout is retried,
+so the wait is `(RETRY_MAX + 1) × UPSTREAM_TIMEOUT`.
+
+**Fix (recommended):** set `FORCE_UPSTREAM_STREAM=on`. The proxy then always
+streams towards the provider and re-aggregates the result, so a non-streaming
+client still gets its single JSON response but the read timeout no longer trips.
+See [Forcing upstream streaming](configuration.md#forcing-upstream-streaming).
+
+**Fix (alternative):** raise `UPSTREAM_TIMEOUT` (e.g. `300`) to give slow
+generations more headroom.
+
+**Other 502 causes:** check network/DNS connectivity to `NVIDIA_API_BASE`, then
+retry.
 
 ## The client can't reach the server / connection refused
 

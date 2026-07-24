@@ -19,6 +19,32 @@ BASE="${BASE:-http://localhost:11434}"
 DEFAULT_MODEL="${MODEL:-meta/llama-3.1-8b-instruct}"
 USE_TUI=1
 
+# Palette per la TUI whiptail/dialog (libreria newt). Di default newt usa uno
+# sfondo magenta acceso: qui lo sostituiamo con un tema blu piu' sobrio.
+# Sovrascrivibile esportando NEWT_COLORS prima di lanciare lo script.
+export NEWT_COLORS="${NEWT_COLORS:-
+root=,blue
+roottext=lightgray,blue
+window=black,lightgray
+border=blue,lightgray
+shadow=black,gray
+title=blue,lightgray
+button=white,blue
+actbutton=black,cyan
+compactbutton=black,lightgray
+label=black,lightgray
+textbox=black,lightgray
+acttextbox=white,blue
+entry=black,lightgray
+listbox=black,lightgray
+actlistbox=white,blue
+sellistbox=black,lightgray
+actsellistbox=white,blue
+checkbox=black,lightgray
+actcheckbox=white,blue
+helpline=white,blue
+}"
+
 # ----------------------------------------------------------------------------
 # Utility
 # ----------------------------------------------------------------------------

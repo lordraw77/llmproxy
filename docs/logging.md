@@ -85,6 +85,17 @@ final `usage` object it is logged too, as a dedicated line:
 If the provider omits `usage` on a streamed response, no telemetry line is
 emitted for it.
 
+### Forced-stream requests
+
+When `FORCE_UPSTREAM_STREAM` is enabled and the caller requested a non-streaming
+reply, the upstream is streamed but the response is re-aggregated into a single
+JSON object. The upstream response line reports `stream=True` (that is what was
+sent upstream), and token usage is logged on a dedicated line:
+
+```
+2026-07-24 09:39:16 CEST [INFO] [9fe32264] telemetry (aggregated) | prompt_tokens=18 completion_tokens=25 total_tokens=43 latency=780ms
+```
+
 ### Error cases
 
 An upstream error (propagated to the client — see

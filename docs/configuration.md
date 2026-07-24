@@ -17,8 +17,9 @@ All configuration is provided through environment variables, typically via a
 | `NVIDIA_MODEL` | `meta/llama-3.1-8b-instruct` | No | Single-model / default model. Used as the fallback default when `NVIDIA_MODELS` is not set. |
 | `NVIDIA_MODELS` | value of `NVIDIA_MODEL` | No | **Comma-separated list** of models to expose. All of them appear in the discovery endpoints (so they show up in Open WebUI's model picker). The **first entry is the default**. See [Multi-model support](#multi-model-support). |
 | `PROXY_API_KEY` | *(empty)* | No | If set, **inbound authentication** is enabled: every request must present this key via `Authorization: Bearer <key>` or `X-Api-Key: <key>`. `/` and `/health` stay open for health-checks. Empty = proxy is open (historic behavior). See [Security considerations](#security-considerations). |
-| `UPSTREAM_TIMEOUT` | `120` | No | Timeout in seconds for calls to the upstream API. |
-| `RETRY_MAX` | `2` | No | Number of retries (beyond the first attempt) on transient upstream failures — network errors and HTTP `429`/`5xx`. `0` disables retries. |
+| `UPSTREAM_TIMEOUT` | `120` | No | Read timeout in seconds for calls to the upstream API. For **non-streaming** requests no bytes arrive until the whole completion is generated, so slow models (reasoning, large, or queued) can exceed the default — raise it, or enable `FORCE_UPSTREAM_STREAM`. |
+| `FORCE_UPSTREAM_STREAM` | `false` | No | When truthy (`1`/`true`/`yes`/`on`), the proxy always requests `stream=true` from the upstream on `/chat/completions`, even if the caller asked for a non-streaming reply. The upstream keeps sending SSE bytes so the read timeout never trips; if the caller wanted a single JSON response the proxy transparently re-aggregates the stream into one `chat.completion`. **Caller behavior is unchanged.** See [Forcing upstream streaming](#forcing-upstream-streaming). |
+| `RETRY_MAX` | `2` | No | Number of retries (beyond the first attempt) on transient upstream failures — network errors and HTTP `429`/`5xx`. `0` disables retries. Note: a read timeout counts as a network error and is retried, so with slow non-streaming generations the total wait is `(RETRY_MAX + 1) × UPSTREAM_TIMEOUT`. |
 | `RETRY_BACKOFF` | `0.5` | No | Base of the exponential backoff (seconds) between retries. A `Retry-After` header from the upstream takes precedence when present. |
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | No | Model used by the embeddings endpoints when the client does not specify one (chat models are not valid for `/embeddings`). |
 | `EMBEDDINGS_INPUT_TYPE` | `query` | No | `input_type` applied to embeddings requests when the client omits it (`query` or `passage`; many NVIDIA embedders require it). Leave empty to never force it. |
@@ -38,7 +39,36 @@ NVIDIA_MODEL=meta/llama-3.1-8b-instruct
 
 # Multi-model: comma-separated; the first entry is the default
 NVIDIA_MODELS=meta/llama-3.1-8b-instruct,meta/llama-3.1-70b-instruct,mistralai/mistral-7b-instruct-v0.3
+
+# Read timeout towards the upstream (seconds). Raise it for slow non-streaming models.
+UPSTREAM_TIMEOUT=300
+
+# Always stream towards the upstream (transparent to the caller). Avoids read timeouts.
+FORCE_UPSTREAM_STREAM=on
 ```
+
+## Forcing upstream streaming
+
+Non-streaming upstream requests (`stream: false`) are the main cause of
+`502 upstream_request_error` read timeouts: the provider sends **no bytes** until
+the entire completion is ready, so a slow or queued model easily blows past
+`UPSTREAM_TIMEOUT`. A streaming request to the same model returns fine because
+SSE bytes keep flowing.
+
+Set `FORCE_UPSTREAM_STREAM=on` to make llmproxy always stream towards the
+upstream on `/chat/completions`, **regardless of what the caller asked for**:
+
+- The caller's request is untouched — a client that sent `stream: false` still
+  receives a single, normal `chat.completion` JSON object, and a streaming
+  client still gets its SSE/NDJSON relay.
+- Internally the proxy consumes the upstream SSE stream, concatenates the delta
+  contents, recovers the final `usage`, and rebuilds the non-streaming response.
+- Because bytes arrive continuously, `UPSTREAM_TIMEOUT` acts as an *inactivity*
+  timeout rather than a *total-generation* timeout — the practical fix for slow
+  reasoning/large models.
+
+Only `/chat/completions` is affected; embeddings and other non-streamable paths
+are left as-is. Token telemetry is preserved (logged as `telemetry (aggregated)`).
 
 ## Multi-model support
 

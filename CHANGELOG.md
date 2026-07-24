@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-07-24
+
+### Added
+
+- **`FORCE_UPSTREAM_STREAM`** option: when enabled, the proxy always requests
+  `stream=true` from the upstream on `/chat/completions`, even when the caller
+  asked for a non-streaming reply. Because the provider keeps sending SSE bytes,
+  the `UPSTREAM_TIMEOUT` read timeout no longer trips on slow/non-streaming
+  generations. The stream is transparently re-aggregated into a single
+  `chat.completion` object, so caller behavior is unchanged. Fixes the common
+  `502 upstream_request_error` (`Read timed out`) on slow reasoning/large models.
+
+### Changed
+
+- Documented that `UPSTREAM_TIMEOUT` is a *read* timeout and that read timeouts
+  are retried (total wait `(RETRY_MAX + 1) × UPSTREAM_TIMEOUT`).
+
 ## [1.1.0] - 2026-07-24
 
 First structured release after `1.0.0`: the monolithic proxy has been rewritten

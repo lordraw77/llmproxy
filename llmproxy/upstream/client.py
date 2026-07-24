@@ -12,6 +12,31 @@ import time
 import requests
 from requests.adapters import HTTPAdapter
 
+from .sse import iter_nvidia_sse
+
+
+class AggregatedResponse:
+    """A synthetic non-streaming response built from a consumed SSE stream.
+
+    When the proxy is configured to always stream towards the upstream but the
+    caller asked for a non-streaming reply, the SSE stream is re-assembled into a
+    single OpenAI ``chat.completion`` object. This object exposes the subset of
+    the ``requests.Response`` interface the web layer uses (``ok``,
+    ``status_code``, ``raise_for_status``, and the memoized ``resp_json``).
+    """
+
+    def __init__(self, data):
+        self._llmproxy_json = data
+        self.status_code = 200
+        self.ok = True
+        self.text = ""
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._llmproxy_json
+
 
 def resp_json(resp):
     """Parse ``resp`` as JSON once and memoize the result on the response object.
@@ -95,6 +120,17 @@ class NvidiaUpstream:
         model = payload.get("model")
         messages = payload.get("messages") or []
 
+        # Force streaming towards the upstream (only for chat completions, the
+        # only path that returns an SSE stream). When the caller wanted a
+        # non-streaming reply we transparently re-aggregate the stream below.
+        force = settings.force_upstream_stream and path == "/chat/completions"
+        aggregate = force and not stream
+        upstream_stream = stream or force
+        if aggregate:
+            payload = dict(payload)
+            payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
+
         # input_chars scans the whole input: computed only if it will actually be logged.
         if logger.isEnabledFor(logging.INFO):
             if messages:
@@ -103,8 +139,10 @@ class NvidiaUpstream:
                 raw_input = payload.get("input") or payload.get("prompt") or ""
                 input_chars = len(raw_input) if isinstance(raw_input, str) else sum(len(str(x)) for x in raw_input)
             logger.info(
-                "[%s] -> NVIDIA request | path=%s model=%s stream=%s messages=%d input_chars=%d",
-                rid, path, model, stream, len(messages), input_chars,
+                "[%s] -> NVIDIA request | path=%s model=%s stream=%s%s messages=%d input_chars=%d",
+                rid, path, model, upstream_stream,
+                " (forced, aggregated)" if aggregate else "",
+                len(messages), input_chars,
             )
         # json.dumps of the whole payload: debug only (otherwise we waste CPU/memory on every request).
         if logger.isEnabledFor(logging.DEBUG):
@@ -119,7 +157,7 @@ class NvidiaUpstream:
                     url,
                     headers=self._headers,
                     json=payload,
-                    stream=stream,
+                    stream=upstream_stream,
                     timeout=settings.upstream_timeout,
                 )
             except requests.exceptions.RequestException as err:
@@ -161,8 +199,13 @@ class NvidiaUpstream:
         logger.log(
             level,
             "[%s] <- NVIDIA response | status=%s latency=%.0fms stream=%s",
-            rid, resp.status_code, elapsed_ms, stream,
+            rid, resp.status_code, elapsed_ms, upstream_stream,
         )
+
+        # Caller wanted a non-streaming reply but we streamed the upstream:
+        # collapse the SSE stream into a single chat.completion object.
+        if resp.ok and aggregate:
+            return self._aggregate_stream(resp, model, rid, elapsed_ms)
 
         if not resp.ok:
             # The error body (for a non-2xx) is small: log it to understand why.
@@ -184,3 +227,41 @@ class NvidiaUpstream:
 
         resp.raise_for_status()
         return resp
+
+    def _aggregate_stream(self, resp, model, rid, elapsed_ms):
+        """Consume an upstream SSE stream and rebuild a non-streaming chat.completion.
+
+        Used when the caller asked for a non-streaming reply but the proxy was
+        configured to always stream towards the upstream. Concatenates the delta
+        contents, recovers the final ``usage`` object, and returns an
+        :class:`AggregatedResponse` that the web layer treats like any other
+        non-streaming upstream response.
+        """
+        usage = {}
+        parts = [piece for piece in iter_nvidia_sse(resp, usage)]
+        content = "".join(parts)
+
+        if not usage:
+            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        if self._metrics is not None:
+            self._metrics.record_tokens(usage)
+        self._logger.info(
+            "[%s] telemetry (aggregated) | prompt_tokens=%s completion_tokens=%s total_tokens=%s latency=%.0fms",
+            rid, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+            usage.get("total_tokens"), elapsed_ms,
+        )
+
+        data = {
+            "id": "chatcmpl-llmproxy",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "logprobs": None,
+                "finish_reason": "stop",
+            }],
+            "usage": usage,
+        }
+        return AggregatedResponse(data)

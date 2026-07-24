@@ -115,7 +115,8 @@ All configuration is via environment variables.
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | Default model for embeddings endpoints. |
 | `EMBEDDINGS_INPUT_TYPE` | `query` | `input_type` applied if the client omits it (`query`/`passage`; empty to skip). |
 | `PROXY_API_KEY` | _(empty)_ | If set, requires this key on inbound requests. Empty = open proxy. |
-| `UPSTREAM_TIMEOUT` | `120` | Upstream request timeout (seconds). |
+| `UPSTREAM_TIMEOUT` | `120` | Upstream read timeout (seconds). Raise it for slow non-streaming models. |
+| `FORCE_UPSTREAM_STREAM` | `false` | Always stream towards the upstream on `/chat/completions` (transparent to the caller). Avoids read timeouts on slow/non-streaming requests. `1`/`true`/`yes`/`on`. |
 | `RETRY_MAX` | `2` | Retries beyond the first attempt on transient errors (`0` disables). |
 | `RETRY_BACKOFF` | `0.5` | Base of the exponential backoff (seconds). |
 | `LOG_LEVEL` | `INFO` | `DEBUG` also logs the payload sent upstream. |

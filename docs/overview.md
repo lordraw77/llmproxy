@@ -71,6 +71,13 @@ also requests `stream_options.include_usage` upstream, so the final token usage
 is captured, logged, and (on the Ollama endpoints) re-exposed in the closing
 chunk.
 
+Streaming can also be forced towards the upstream regardless of the caller's
+choice: with `FORCE_UPSTREAM_STREAM` enabled, non-streaming `/chat/completions`
+requests are streamed upstream and re-aggregated into a single response. This
+keeps slow, non-streaming generations from hitting the `UPSTREAM_TIMEOUT` read
+timeout, while the client still receives a plain JSON reply. See
+[Configuration](configuration.md#forcing-upstream-streaming).
+
 ## Architecture
 
 llmproxy has no database and no persistence. The code is organized as a small
@@ -145,9 +152,11 @@ tests.
   models are advertised by the discovery endpoints, and each request is served
   by the client-requested model when it matches, otherwise the default. This
   makes llmproxy work with clients such as Open WebUI that offer a model picker.
-- **Resilient upstream calls** — every upstream request has a configurable
+- **Resilient upstream calls** — every upstream request has a configurable read
   timeout (`UPSTREAM_TIMEOUT`) and automatic retry with exponential backoff on
   transient failures (network errors, `429`, `5xx`), honouring `Retry-After`.
+  Streaming can be forced upstream (`FORCE_UPSTREAM_STREAM`) so slow
+  non-streaming generations don't trip the read timeout.
 - **Optional inbound auth** — when `PROXY_API_KEY` is set, a `before_request`
   hook enforces it on every path except `/` and `/health`.
 - **Threaded server** — locally, `app.run(..., threaded=True)` handles
