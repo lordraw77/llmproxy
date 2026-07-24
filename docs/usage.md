@@ -101,6 +101,20 @@ curl http://localhost:11434/v1/models \
 # or:  -H "X-Api-Key: $PROXY_API_KEY"
 ```
 
+### Statistics & metrics
+
+```bash
+# Machine-readable snapshot (requests, latency, tokens, upstream, process)
+curl http://localhost:11434/stats.json
+
+# Or open the auto-refreshing HTML dashboard in a browser:
+#   http://localhost:11434/stats
+```
+
+`/stats` and `/stats.json` require `PROXY_API_KEY` when it is configured (send it
+as above). Counters are per gunicorn worker — see
+[API Reference → `/stats`](api-reference.md#get-stats).
+
 ## Python — OpenAI SDK
 
 Point the official OpenAI SDK at llmproxy by overriding `base_url`. Unless the
