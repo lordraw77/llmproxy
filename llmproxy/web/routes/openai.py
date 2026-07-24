@@ -15,8 +15,13 @@ bp = Blueprint("openai", __name__)
 
 
 @bp.route("/v1/models", methods=["GET"])
+@bp.route("/models", methods=["GET"])
 def v1_models():
-    """OpenAI ``/v1/models``: list the exposed models."""
+    """OpenAI ``/v1/models``: list the exposed models.
+
+    Also served without the ``/v1`` prefix for clients configured with a base
+    URL that omits it.
+    """
     created = int(time.time())
     return jsonify({
         "object": "list",
@@ -25,6 +30,7 @@ def v1_models():
 
 
 @bp.route("/v1/models/<path:model_id>", methods=["GET"])
+@bp.route("/models/<path:model_id>", methods=["GET"])
 def v1_model(model_id):
     """OpenAI ``/v1/models/<id>``: detail of a single model (some OpenAI SDKs query it).
 
@@ -37,9 +43,14 @@ def v1_model(model_id):
 
 
 @bp.route("/v1/chat/completions", methods=["POST"])
+@bp.route("/chat/completions", methods=["POST"])
 @require_upstream_key
 def v1_chat_completions():
-    """OpenAI ``/v1/chat/completions``: passthrough chat, raw SSE relay when streaming."""
+    """OpenAI ``/v1/chat/completions``: passthrough chat, raw SSE relay when streaming.
+
+    Also served at ``/chat/completions`` (no ``/v1``) for clients whose base URL
+    omits the prefix.
+    """
     container = deps()
     body = request.get_json(force=True) or {}
     stream = body.get("stream", False)
@@ -62,6 +73,7 @@ def v1_chat_completions():
 
 
 @bp.route("/v1/embeddings", methods=["POST"])
+@bp.route("/embeddings", methods=["POST"])
 @require_upstream_key
 def v1_embeddings():
     """OpenAI ``/v1/embeddings``: passthrough to the upstream ``/embeddings`` endpoint."""
@@ -78,6 +90,7 @@ def v1_embeddings():
 
 
 @bp.route("/v1/completions", methods=["POST"])
+@bp.route("/completions", methods=["POST"])
 @require_upstream_key
 def v1_completions():
     """OpenAI ``/v1/completions``: text completion, SSE (stream) or JSON."""

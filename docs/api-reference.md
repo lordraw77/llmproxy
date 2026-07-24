@@ -41,6 +41,12 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 | POST | `/v1/chat/completions` | OpenAI | ✅ (default off) | Chat completion (pass-through) |
 | POST | `/v1/completions` | OpenAI | ✅ (default off) | Text completion |
 | POST | `/v1/embeddings` | OpenAI | — | Embeddings (pass-through) |
+
+> The OpenAI endpoints are **also served without the `/v1` prefix**
+> (`/chat/completions`, `/completions`, `/embeddings`, `/models`,
+> `/models/<id>`), for clients whose base URL omits it. Same behavior as the
+> `/v1/*` routes.
+
 | POST | `/completion` | llama.cpp | ✅ (default off) | Native llama-server completion |
 | GET | `/props` | llama.cpp | — | Server properties |
 | GET | `/health` | Misc | — | Health check (`?upstream=1` probes NVIDIA) |
