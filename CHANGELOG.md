@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.3] - 2026-07-24
+
+### Added
+
+- **Prefix-less OpenAI routes**: `/chat/completions`, `/completions`,
+  `/embeddings`, `/models` and `/models/<id>` are now served alongside their
+  `/v1/*` equivalents, for clients configured with a base URL that omits `/v1`
+  (previously a `404`).
+
+## [1.1.2] - 2026-07-24
+
+### Added
+
+- **Outbound proxy support** via `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`,
+  applied to the pooled upstream session and the health-check probe. Needed on
+  hosts that reach the internet only through a corporate egress proxy, where the
+  container otherwise connects directly and every upstream request hangs until
+  `UPSTREAM_TIMEOUT`.
+
 ## [1.1.1] - 2026-07-24
 
 ### Added
@@ -16,11 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   generations. The stream is transparently re-aggregated into a single
   `chat.completion` object, so caller behavior is unchanged. Fixes the common
   `502 upstream_request_error` (`Read timed out`) on slow reasoning/large models.
-- **Outbound proxy support** via `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`,
-  applied to the pooled upstream session and the health-check probe. Needed on
-  hosts that reach the internet only through a corporate egress proxy, where the
-  container otherwise connects directly and every upstream request hangs until
-  `UPSTREAM_TIMEOUT`.
 
 ### Changed
 
