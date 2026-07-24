@@ -52,6 +52,12 @@ class Settings:
     retry_backoff: float
     retry_status: frozenset = field(default_factory=lambda: frozenset({429, 500, 502, 503, 504}))
 
+    # Force streaming towards the upstream regardless of what the caller asked
+    # for. Avoids read-timeouts on slow non-streaming generations: the upstream
+    # keeps sending SSE bytes, so the read timeout never trips. Transparent to
+    # the caller (a non-streaming client still gets a single JSON response).
+    force_upstream_stream: bool = False
+
     # Inbound authentication.
     proxy_api_key: str = ""
     auth_exempt_paths: frozenset = field(default_factory=lambda: frozenset({"/", "/health"}))
@@ -92,6 +98,8 @@ def load_settings():
         nvidia_api_key=os.environ.get("NVIDIA_API_KEY", ""),
         upstream_timeout=float(os.environ.get("UPSTREAM_TIMEOUT", "120")),
         pool_size=pool_size,
+        force_upstream_stream=os.environ.get("FORCE_UPSTREAM_STREAM", "false").strip().lower()
+        in ("1", "true", "yes", "on"),
         retry_max=int(os.environ.get("RETRY_MAX", "2")),
         retry_backoff=float(os.environ.get("RETRY_BACKOFF", "0.5")),
         proxy_api_key=os.environ.get("PROXY_API_KEY", "").strip(),

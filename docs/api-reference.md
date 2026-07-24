@@ -276,7 +276,10 @@ through to NVIDIA unchanged.
 `false`.
 
 **Non-streaming response:** the upstream OpenAI response JSON, with `model`
-rewritten to `NVIDIA_MODEL`.
+rewritten to `NVIDIA_MODEL`. When `FORCE_UPSTREAM_STREAM` is enabled the response
+is instead re-assembled from the upstream SSE stream (same shape; `id` is
+`chatcmpl-llmproxy` and `finish_reason` is `stop`) — see
+[Configuration](configuration.md#forcing-upstream-streaming).
 
 **Streaming response** (`text/event-stream`): the upstream SSE stream is relayed
 byte-for-byte to the client.
