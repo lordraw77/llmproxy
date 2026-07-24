@@ -126,6 +126,7 @@ TEST_NAMES=(
   "Dettaglio modello /v1/models/<id>"
   "Autenticazione (PROXY_API_KEY)"
   "Errore propagato (modello inesistente upstream)"
+  "Response cache (/stats.json, richiesta ripetuta)"
   "PING di TUTTI i modelli"
 )
 
@@ -272,7 +273,29 @@ test_16_error() {
     -d '{"model":"nvidia/does-not-exist","messages":[{"role":"user","content":"hi"}]}'
 }
 
-test_17_all() {
+test_17_cache() {
+  # Verifica il response caching: due richieste non-streaming identiche, la
+  # seconda dovrebbe essere servita dalla cache (hit) se CACHE_ENABLED=on lato
+  # server. Mostra il gruppo metrics.cache di /stats.json prima e dopo.
+  local m; m=$(pick_model)
+  hr; echo "Response cache -> $m"; hr
+  echo "Nota: richiede CACHE_ENABLED=on lato server; usa temperature=0 per una"
+  echo "      richiesta deterministica cacheabile."
+  echo
+  echo "-> stato cache iniziale (/stats.json .metrics.cache):"
+  curl -s "$BASE/stats.json" | pp '.metrics.cache // "cache non presente"'
+  local payload="{\"model\":\"$m\",\"stream\":false,\"temperature\":0,\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with just: OK\"}]}"
+  hr; echo "-> 1a richiesta (miss atteso):"; hr
+  curl -s "$BASE/v1/chat/completions" -H "Content-Type: application/json" -d "$payload" \
+    | pp -r '.choices[0].message.content // .'
+  hr; echo "-> 2a richiesta identica (hit atteso, nessuna chiamata upstream):"; hr
+  curl -s "$BASE/v1/chat/completions" -H "Content-Type: application/json" -d "$payload" \
+    | pp -r '.choices[0].message.content // .'
+  hr; echo "-> stato cache finale (hits/misses/hit_rate):"; hr
+  curl -s "$BASE/stats.json" | pp '.metrics.cache // "cache non presente"'
+}
+
+test_18_all() {
   local models pass=0 fail=0 content err code resp body
   models=$(list_models)
   [ -z "$models" ] && { echo "Nessun modello su $BASE/v1/models"; return 1; }
@@ -314,7 +337,8 @@ run_test() {
     14) test_14_model_detail ;;
     15) test_15_auth ;;
     16) test_16_error ;;
-    17|all) test_17_all ;;
+    17) test_17_cache ;;
+    18|all) test_18_all ;;
     *)  echo "Test sconosciuto: $1" >&2; return 1 ;;
   esac
 }

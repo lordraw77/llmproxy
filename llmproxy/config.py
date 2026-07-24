@@ -87,6 +87,11 @@ class Settings:
     embeddings_model: str = ""
     embeddings_input_type: str = ""
 
+    # Response cache (non-streaming replies only). Disabled by default.
+    cache_enabled: bool = False
+    cache_ttl: float = 300.0
+    cache_max_size: int = 512
+
 
 def load_settings():
     """Build a :class:`Settings` from the current environment (loads ``.env`` first)."""
@@ -128,4 +133,8 @@ def load_settings():
         default_model=models[0],
         embeddings_model=os.environ.get("NVIDIA_EMBEDDINGS_MODEL", "nvidia/nv-embedqa-e5-v5"),
         embeddings_input_type=os.environ.get("EMBEDDINGS_INPUT_TYPE", "query").strip(),
+        cache_enabled=os.environ.get("CACHE_ENABLED", "false").strip().lower()
+        in ("1", "true", "yes", "on"),
+        cache_ttl=float(os.environ.get("CACHE_TTL", "300")),
+        cache_max_size=int(os.environ.get("CACHE_MAX_SIZE", "512")),
     )
