@@ -24,6 +24,9 @@ All configuration is provided through environment variables, typically via a
 | `RETRY_BACKOFF` | `0.5` | No | Base of the exponential backoff (seconds) between retries. A `Retry-After` header from the upstream takes precedence when present. |
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | No | Model used by the embeddings endpoints when the client does not specify one (chat models are not valid for `/embeddings`). |
 | `EMBEDDINGS_INPUT_TYPE` | `query` | No | `input_type` applied to embeddings requests when the client omits it (`query` or `passage`; many NVIDIA embedders require it). Leave empty to never force it. |
+| `CACHE_ENABLED` | `false` | No | When truthy (`1`/`true`/`yes`/`on`), enables the **response cache**: identical **non-streaming** requests are served from memory, skipping the upstream call. Streaming requests are never cached. See [Response caching](#response-caching). |
+| `CACHE_TTL` | `300` | No | Time-to-live, in seconds, of each cache entry. After it elapses the entry expires and the next identical request goes upstream again. A non-positive value disables the cache. |
+| `CACHE_MAX_SIZE` | `512` | No | Maximum number of entries kept in the cache. Once the cap is reached the **least-recently-used** entry is evicted to make room. A non-positive value disables the cache. |
 | `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
 
 ## Example `.env`
@@ -92,6 +95,49 @@ upstream on `/chat/completions`, **regardless of what the caller asked for**:
 
 Only `/chat/completions` is affected; embeddings and other non-streamable paths
 are left as-is. Token telemetry is preserved (logged as `telemetry (aggregated)`).
+
+## Response caching
+
+llmproxy can memoize **non-streaming** upstream replies in an in-memory cache, so
+repeated identical requests are answered instantly without a round-trip to the
+provider — cutting latency and, for metered upstreams, token cost. It is
+**disabled by default**; enable it with:
+
+```dotenv
+CACHE_ENABLED=on
+CACHE_TTL=300        # entry time-to-live in seconds (default 300)
+CACHE_MAX_SIZE=512   # max entries; LRU eviction past the cap (default 512)
+```
+
+How it works:
+
+- **What is cached** — successful (`2xx`), **non-streaming** chat/text completions
+  (`/api/chat`, `/api/generate`, `/v1/chat/completions`, `/v1/completions`,
+  `/completion`) and embeddings (`/v1/embeddings`, `/api/embeddings`, `/api/embed`).
+  **Streaming responses are never cached** — they are consumed incrementally and
+  cannot be replayed.
+- **Cache key** — a SHA-256 of the canonicalized payload actually sent upstream
+  (model + messages/prompt + forwarded sampling parameters, or the embeddings
+  input). Any difference in those fields — a changed prompt, `temperature`,
+  `max_tokens`, `seed`, model, etc. — is a different key and misses the cache.
+- **TTL** — each entry expires `CACHE_TTL` seconds after it is stored; an expired
+  entry is discarded on the next lookup and the request goes upstream again.
+- **Size / eviction** — the cache holds at most `CACHE_MAX_SIZE` entries. When the
+  cap is exceeded the least-recently-used entry is evicted (classic LRU).
+- **Observability** — hit/miss counts, hit rate, live entry count, stores,
+  evictions and expirations are reported under `metrics.cache` at `/stats.json`
+  and on the `/stats` dashboard. See [Statistics & metrics](api-reference.md#statistics).
+
+> **Per-worker, in-memory.** Like the metrics, the cache lives in each worker
+> process and is **not shared** across gunicorn workers or persisted to disk. With
+> `N` workers a request may hit whichever worker holds the entry; the reported hit
+> rate is therefore a per-worker figure. A restart clears the cache.
+
+Because completions are typically non-deterministic (`temperature > 0`, no fixed
+`seed`), caching is most useful for **deterministic** workloads — `temperature: 0`
+or a fixed `seed`, repeated embeddings of the same corpus, health-check style
+probes, or identical prompts replayed by a client. Leave it off if you require a
+fresh generation on every call.
 
 ## Multi-model support
 

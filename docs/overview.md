@@ -78,13 +78,25 @@ keeps slow, non-streaming generations from hitting the `UPSTREAM_TIMEOUT` read
 timeout, while the client still receives a plain JSON reply. See
 [Configuration](configuration.md#forcing-upstream-streaming).
 
+### Response caching
+
+Optionally, non-streaming replies can be **cached in memory** to skip repeated
+upstream calls. When `CACHE_ENABLED` is set, the `CompletionService` and
+`EmbeddingService` compute a SHA-256 key from the outbound payload; a hit replays
+the stored body as a `CachedResponse` (no network call), a miss stores the
+successful reply. The cache is a per-worker TTL + LRU store (`CACHE_TTL`,
+`CACHE_MAX_SIZE`) and never caches streaming responses. Its hit/miss counters are
+surfaced under `metrics.cache` at `/stats`. See
+[Configuration → Response caching](configuration.md#response-caching).
+
 ## Architecture
 
 llmproxy has no database and no persistence. The code is organized as a small
 **layered package** following clean-architecture boundaries: dependencies point
 inward, and each layer has a single responsibility. `main.py` is a thin entrypoint
 that builds the app and exposes `app` for gunicorn (`main:app`). The only mutable
-state is an in-memory, per-worker metrics collector powering `/stats`.
+state is in-memory and per-worker: the metrics collector powering `/stats` and the
+optional response cache.
 
 ```
 main.py                          # entrypoint — builds the app, exports `app`, dev server
@@ -92,6 +104,7 @@ llmproxy/
 ├── config.py                    # Settings dataclass — the only place env vars are read
 ├── logging_setup.py             # TZFormatter + configure_logging()
 ├── metrics.py                   # MetricsCollector (per-worker) + process_info()
+├── cache.py                     # ResponseCache (per-worker TTL+LRU) + CachedResponse
 │
 ├── domain/                      # pure business rules (no I/O, no framework)
 │   ├── models.py                #   ModelRegistry — resolve / resolve_embeddings / has
@@ -157,6 +170,10 @@ tests.
   transient failures (network errors, `429`, `5xx`), honouring `Retry-After`.
   Streaming can be forced upstream (`FORCE_UPSTREAM_STREAM`) so slow
   non-streaming generations don't trip the read timeout.
+- **Optional response cache** — when `CACHE_ENABLED` is set, identical
+  non-streaming requests are served from a per-worker in-memory TTL + LRU cache
+  (`CACHE_TTL`, `CACHE_MAX_SIZE`), skipping the upstream call. Streaming replies
+  are never cached; cache activity is reported at `/stats`.
 - **Optional inbound auth** — when `PROXY_API_KEY` is set, a `before_request`
   hook enforces it on every path except `/` and `/health`.
 - **Threaded server** — locally, `app.run(..., threaded=True)` handles

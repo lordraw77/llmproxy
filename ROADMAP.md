@@ -3,10 +3,10 @@
 Development direction for **llmproxy**. Dates are indicative; priority is driven
 by items marked as "core". Versioning follows [SemVer](https://semver.org/).
 
-Current state — **v1.1.4**: a proxy to a **single provider** (NVIDIA,
+Current state — **v1.2.0**: a proxy to a **single provider** (NVIDIA,
 OpenAI-compatible API) that exposes the Ollama, OpenAI and llama.cpp APIs, with
-embeddings, retry/backoff, inbound auth and in-process metrics. Since v1.1.0 the
-`1.1.x` line has added, without breaking changes:
+embeddings, retry/backoff, inbound auth, an optional response cache and
+in-process metrics. Since v1.1.0 the line has added, without breaking changes:
 
 - **v1.1.1** — `FORCE_UPSTREAM_STREAM`: always stream towards the upstream and
   transparently re-aggregate into a non-streaming reply, avoiding read timeouts
@@ -18,10 +18,13 @@ embeddings, retry/backoff, inbound auth and in-process metrics. Since v1.1.0 the
 - **v1.1.4** — fix: preserve **tool calls** (and the real `finish_reason`) when
   re-aggregating a `FORCE_UPSTREAM_STREAM` response, so forced/auto function
   calls are no longer lost on non-streaming requests.
+- **v1.2.0** — **response caching** (`CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`):
+  identical non-streaming completions and embeddings are served from a per-worker
+  in-memory TTL + LRU cache, with hit/miss/eviction stats exposed at `/stats`.
 
 ---
 
-## v1.2.0 — Multi-provider (core)
+## v1.3.0 — Multi-provider (core)
 
 Goal: remove the coupling to the single NVIDIA upstream and introduce a provider
 abstraction.
@@ -37,7 +40,7 @@ abstraction.
 - [ ] Normalize API differences (parameter names, embeddings formats, streaming
       formats) behind the abstraction.
 
-## v1.3.0 — Model and provider fail-chain (core)
+## v1.4.0 — Model and provider fail-chain (core)
 
 Goal: service continuity when a model or a provider is unavailable.
 
@@ -52,7 +55,7 @@ Goal: service continuity when a model or a provider is unavailable.
       from rotation.
 - [ ] Failover-aware retry policies (avoid double-retrying the same failed node).
 
-## v1.4.0 — Networking and connectivity
+## v1.5.0 — Networking and connectivity
 
 Goal: run inside corporate networks and isolated environments.
 
@@ -71,8 +74,10 @@ Goal: run inside corporate networks and isolated environments.
 Ideas worth considering, ordered by value/effort ratio.
 
 ### Reliability & performance
-- [ ] **Response caching** (by prompt+parameters) with TTL, for embeddings and
+- [x] **Response caching** (by prompt+parameters) with TTL, for embeddings and
       deterministic completions — big savings on repetitive workloads.
+      *(shipped in v1.2.0: `CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`, per-worker
+      TTL + LRU, non-streaming only, stats at `/stats`.)*
 - [ ] **Rate limiting / quotas** per inbound API key (tokens/min, requests/min).
 - [ ] **Queue and max concurrency** towards upstreams to avoid cascading 429s.
 - [ ] **Robust streaming**: upstream cancellation when the client disconnects.

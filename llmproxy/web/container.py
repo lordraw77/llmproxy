@@ -14,7 +14,7 @@ _EXT_KEY = "llmproxy"
 class Container:
     """Bundle of application-scoped collaborators."""
 
-    def __init__(self, settings, logger, registry, upstream, completions, embeddings, metrics):
+    def __init__(self, settings, logger, registry, upstream, completions, embeddings, metrics, cache=None):
         self.settings = settings
         self.logger = logger
         self.registry = registry
@@ -22,6 +22,7 @@ class Container:
         self.completions = completions
         self.embeddings = embeddings
         self.metrics = metrics
+        self.cache = cache
 
     def attach(self, app):
         """Register this container on ``app`` for later retrieval via :func:`deps`."""

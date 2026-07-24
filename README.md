@@ -22,7 +22,8 @@ NVIDIA-hosted model **without any client-side changes** — you simply point the
 client at llmproxy instead of at a real local runtime. It covers chat,
 completions, and **embeddings**, supports streaming, multi-model discovery,
 optional inbound authentication, automatic retries on transient upstream errors,
-and a live **`/stats`** metrics & process dashboard.
+an optional **response cache** (configurable TTL & size) for non-streaming
+replies, and a live **`/stats`** metrics & process dashboard.
 
 ## Demo
 

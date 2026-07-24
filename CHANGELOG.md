@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-07-24
+
+### Added
+
+- **Response caching** for non-streaming replies (`llmproxy/cache.py`,
+  `ResponseCache`). When `CACHE_ENABLED` is truthy, identical non-streaming
+  chat/text completions and embeddings are served from an in-memory, per-worker
+  cache — the upstream call (and its latency and token cost) is skipped. The
+  cache key is a SHA-256 of the canonicalized outbound payload (model +
+  messages/prompt + forwarded sampling params, or the embeddings input), so any
+  change in those fields is a distinct entry. Streaming responses are never
+  cached, and only successful (`2xx`) replies are stored.
+  - **Configurable** via `CACHE_ENABLED` (default `false`), `CACHE_TTL` (entry
+    time-to-live in seconds, default `300`) and `CACHE_MAX_SIZE` (max entries with
+    LRU eviction, default `512`). A non-positive TTL or size degrades gracefully
+    to "disabled".
+  - **Detailed in the statistics**: `/stats.json` gains a `metrics.cache` group
+    (`enabled`, `ttl_seconds`, `max_size`, `entries`, `hits`, `misses`, `stores`,
+    `evictions`, `expirations`, `hit_rate`) and the `/stats` HTML dashboard shows
+    a new **Response cache** card. Cache hits are also logged (`cache HIT`).
+
 ## [1.1.4] - 2026-07-24
 
 ### Fixed
@@ -118,5 +139,6 @@ endpoint and native `llama.cpp` compatibility were added.
 - Initial llmproxy server implementation: an Ollama-compatible proxy to NVIDIA's
   OpenAI-compatible API, with streaming, base documentation and test scripts.
 
+[1.2.0]: https://github.com/lordraw77/llmproxy/compare/v1.1.4...v1.2.0
 [1.1.0]: https://github.com/lordraw77/llmproxy/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/lordraw77/llmproxy/releases/tag/v1.0.0

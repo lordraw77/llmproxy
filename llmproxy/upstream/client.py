@@ -92,6 +92,10 @@ class NvidiaUpstream:
         """The (cached) HTTP headers used for every upstream NVIDIA request."""
         return self._headers
 
+    def log_cache_hit(self, rid, key):
+        """Log a response-cache hit (the upstream call is skipped)."""
+        self._logger.info("[%s] cache HIT | key=%s (upstream call skipped)", rid, key[-12:])
+
     def get(self, path, timeout):
         """Bare GET against the upstream (used by the health check)."""
         return requests.get(

@@ -80,14 +80,19 @@ This means the picker always reflects your current `NVIDIA_MODELS` configuration
 | 14 | Model detail | `GET /v1/models/<id>` for a known model, plus a 404 for an unknown one |
 | 15 | Authentication | Probes `/v1/models` with/without a token (`PROXY_KEY`); confirms `/health` stays exempt |
 | 16 | Error propagation | Requests a non-existent model; expects the upstream status to be propagated |
-| 17 / `all` | Ping all models | Sends a tiny prompt to every exposed model and reports ✅ / ❌ |
+| 17 | Response cache | Sends the same non-streaming request twice and shows `metrics.cache` from `/stats.json` before/after (needs `CACHE_ENABLED=on` server-side to see a hit) |
+| 18 / `all` | Ping all models | Sends a tiny prompt to every exposed model and reports ✅ / ❌ |
 
 Run `./scripts/tests.sh --list` for the current list (it is generated from the
 script itself).
 
 ## Interpreting results
 
-- **Test 17 (`all`)** prints one line per model — `✅` with the reply, or
+- **Test 17 (response cache)** issues an identical `temperature: 0` request
+  twice; with `CACHE_ENABLED=on` the second is served from cache and the
+  `metrics.cache.hits` counter increments (no upstream call). With caching off it
+  simply shows `enabled: false`.
+- **Test 18 (`all`)** prints one line per model — `✅` with the reply, or
   `❌ [status]` with the propagated provider error — and a final
   `OK: n   FAILED: m` summary. It's the fastest way to see which models in your
   `NVIDIA_MODELS` are actually reachable with your API key.

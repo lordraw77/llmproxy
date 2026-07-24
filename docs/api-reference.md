@@ -447,7 +447,19 @@ The same data as JSON, for scraping or scripting.
     },
     "latency_ms": { "avg": 812.4, "max": 5210.0, "count": 128 },
     "tokens": { "prompt": 40213, "completion": 18902, "total": 59115 },
-    "upstream": { "calls": 126, "errors": 2, "avg_latency_ms": 780.1, "max_latency_ms": 5180.0 }
+    "upstream": { "calls": 126, "errors": 2, "avg_latency_ms": 780.1, "max_latency_ms": 5180.0 },
+    "cache": {
+      "enabled": true,
+      "ttl_seconds": 300.0,
+      "max_size": 512,
+      "entries": 37,
+      "hits": 41,
+      "misses": 87,
+      "stores": 50,
+      "evictions": 0,
+      "expirations": 13,
+      "hit_rate": 0.3203
+    }
   },
   "process": {
     "pid": 17,
@@ -462,6 +474,15 @@ The same data as JSON, for scraping or scripting.
   "models": { "exposed": ["..."], "default": "...", "embeddings": "..." }
 }
 ```
+
+The `metrics.cache` group is present whenever the response cache is wired
+(always, in the default app); its `enabled` flag reflects whether caching is
+actually active (`CACHE_ENABLED`). It reports the configured `ttl_seconds` /
+`max_size`, the current number of live `entries`, and running counters:
+`hits`, `misses`, `stores` (entries written), `evictions` (dropped because the
+cache was full, LRU), `expirations` (dropped because the TTL elapsed) and the
+derived `hit_rate` (`hits / (hits + misses)`, `0`–`1`). See
+[Response caching](configuration.md#response-caching) for the behavior.
 
 Both endpoints respect the optional inbound `PROXY_API_KEY` (they are **not**
 auth-exempt, unlike `/` and `/health`). The `/stats` and `/stats.json` requests

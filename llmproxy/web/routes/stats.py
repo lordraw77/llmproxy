@@ -19,8 +19,12 @@ bp = Blueprint("stats", __name__)
 def _payload():
     """Assemble the combined metrics + process snapshot."""
     container = deps()
+    metrics = container.metrics.snapshot()
+    if container.cache is not None:
+        # Surface the response cache alongside the other metric groups.
+        metrics["cache"] = container.cache.snapshot()
     return {
-        "metrics": container.metrics.snapshot(),
+        "metrics": metrics,
         "process": process_info(container.settings),
         "models": {
             "exposed": list(container.registry.models),
@@ -78,6 +82,29 @@ def _render(payload):
     lat = m["latency_ms"]
     tok = m["tokens"]
     up = m["upstream"]
+    cache = m.get("cache")
+
+    if cache is not None:
+        state = "enabled" if cache["enabled"] else "disabled"
+        cache_card = f"""
+  <div class="card">
+    <h2>Response cache</h2>
+    <div class="kpis">
+      <div class="kpi"><span class="big">{round(cache['hit_rate'] * 100, 1)}%</span><small>hit rate</small></div>
+      <div class="kpi"><span class="big">{cache['hits']}</span><small>hits</small></div>
+      <div class="kpi"><span class="big">{cache['misses']}</span><small>misses</small></div>
+    </div>
+    <table>
+      <tr><td class="k">state</td><td class="v">{state}</td></tr>
+      <tr><td class="k">entries</td><td class="v">{cache['entries']} / {cache['max_size']}</td></tr>
+      <tr><td class="k">ttl</td><td class="v">{cache['ttl_seconds']}s</td></tr>
+      <tr><td class="k">stores</td><td class="v">{cache['stores']}</td></tr>
+      <tr><td class="k">evictions</td><td class="v">{cache['evictions']}</td></tr>
+      <tr><td class="k">expirations</td><td class="v">{cache['expirations']}</td></tr>
+    </table>
+  </div>"""
+    else:
+        cache_card = ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -155,7 +182,7 @@ def _render(payload):
       <div class="kpi"><span class="big">{up['max_latency_ms']}</span><small>max ms</small></div>
     </div>
   </div>
-
+{cache_card}
   <div class="card">
     <h2>Process manager</h2>
     <table>

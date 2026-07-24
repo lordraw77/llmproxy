@@ -36,6 +36,9 @@ hosted NVIDIA model.
 - **Vision** — pass `image_url` content to vision-capable models.
 - **Resilient** — configurable upstream timeout and automatic retry with
   exponential backoff on `429`/`5xx`/network errors (honours `Retry-After`).
+- **Response caching** — optional per-worker in-memory cache for non-streaming
+  completions and embeddings, with configurable TTL and size
+  (`CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`) and hit/miss stats at `/stats`.
 - **Optional inbound auth** — protect the proxy with `PROXY_API_KEY`
   (`Authorization: Bearer` or `X-Api-Key`); `/` and `/health` stay open for
   health-checks.
@@ -117,6 +120,9 @@ All configuration is via environment variables.
 | `PROXY_API_KEY` | _(empty)_ | If set, requires this key on inbound requests. Empty = open proxy. |
 | `UPSTREAM_TIMEOUT` | `120` | Upstream read timeout (seconds). Raise it for slow non-streaming models. |
 | `FORCE_UPSTREAM_STREAM` | `false` | Always stream towards the upstream on `/chat/completions` (transparent to the caller). Avoids read timeouts on slow/non-streaming requests. `1`/`true`/`yes`/`on`. |
+| `CACHE_ENABLED` | `false` | Enable the response cache for non-streaming replies (`1`/`true`/`yes`/`on`). Identical requests skip the upstream call. Stats at `/stats`. |
+| `CACHE_TTL` | `300` | Cache entry time-to-live (seconds). |
+| `CACHE_MAX_SIZE` | `512` | Max cache entries (LRU eviction past the cap). |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | _(empty)_ | Outbound egress proxy to reach the upstream (corporate proxy). Without it, a proxied host hangs until `UPSTREAM_TIMEOUT`. Keep `localhost,127.0.0.1` in `NO_PROXY`. |
 | `RETRY_MAX` | `2` | Retries beyond the first attempt on transient errors (`0` disables). |
 | `RETRY_BACKOFF` | `0.5` | Base of the exponential backoff (seconds). |
