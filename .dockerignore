@@ -40,3 +40,4 @@ Thumbs.db
 *.md
 .claude/
 *.log
+graphify-out/

@@ -1,4 +1,10 @@
 # llmproxy — Documentation
+[![GitHub License](https://img.shields.io/github/license/lordraw77/llmproxy)](../LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/lordraw77/llmproxy)](https://github.com/lordraw77/llmproxy/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/lordraw77/llmproxy)](https://github.com/lordraw77/llmproxy/issues)
+[![Docker Pulls](https://img.shields.io/docker/pulls/lordraw/llmproxy)](https://hub.docker.com/r/lordraw/llmproxy)
+
+**A lightweight, high-performance LLM proxy for caching, automatic failover, cost tracking, and seamless integration between local and cloud AI providers.**
 
 **llmproxy** is a lightweight Flask server that emulates the HTTP APIs of several
 popular local LLM runtimes ([Ollama](https://ollama.com), the
@@ -11,8 +17,8 @@ This lets any tool that already speaks Ollama, OpenAI, or llama.cpp talk to a
 NVIDIA-hosted model **without any client-side changes** — you simply point the
 client at llmproxy instead of at a real local runtime. It covers chat,
 completions, and **embeddings**, supports streaming, multi-model discovery,
-optional inbound authentication, and automatic retries on transient upstream
-errors.
+optional inbound authentication, automatic retries on transient upstream errors,
+and a live **`/stats`** metrics & process dashboard.
 
 ```
 ┌──────────────┐     Ollama / OpenAI / llama.cpp      ┌──────────┐   OpenAI    ┌───────────────────┐
@@ -58,5 +64,6 @@ The prebuilt image is published on Docker Hub as
 
 ## License
 
-No license file is bundled with this project. Consult the repository owner
-before redistribution.
+Released under the **MIT License** — see the [`LICENSE`](../LICENSE) file for the
+full text. In short: free to use, copy, modify, and distribute, with attribution
+and no warranty.

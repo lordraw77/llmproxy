@@ -85,7 +85,7 @@ docker compose logs -f llmproxy
 # Restart after changing .env
 docker compose restart llmproxy
 
-# Rebuild after changing main.py or dependencies
+# Rebuild after changing the code (main.py / llmproxy/) or dependencies
 docker compose up -d --build
 
 # Stop and remove
@@ -107,6 +107,10 @@ use but not hardened for high load.) For production you may also want to:
   termination and request buffering control. Disable proxy buffering on
   streaming routes so SSE / NDJSON is flushed to clients in real time
   (e.g. nginx `proxy_buffering off;`).
+- **Monitor** the live dashboard at `GET /stats` (HTML) or scrape `GET
+  /stats.json`: request/latency/token counters, upstream call telemetry, and the
+  process-manager view (PID, worker pool, memory, uptime). See
+  [API Reference → `/stats`](api-reference.md#get-stats).
 
 ### Security
 
@@ -131,9 +135,15 @@ llmproxy is stateless, so you can run multiple replicas behind a load balancer
 without any coordination. The practical limit is your upstream NVIDIA API rate
 limit and quota, not llmproxy itself.
 
+Note that the `/stats` metrics are kept **in memory per gunicorn worker** (and
+per replica): each response reflects only the worker that served it. This is fine
+for a quick operational glance; for aggregated fleet-wide metrics, scrape
+`/stats.json` per instance or place a dedicated metrics backend (e.g. Prometheus)
+in front.
+
 ## Upgrading
 
-1. Pull or edit the new `main.py` / `requirements.txt`.
+1. Pull or edit the new code (`main.py`, the `llmproxy/` package) / `requirements.txt`.
 2. Rebuild and recreate the container:
 
    ```bash

@@ -69,9 +69,10 @@ value, so existing single-model setups keep working unchanged.
 
 ### Configuration is read once, at startup
 
-Environment variables are read into module-level constants when `main.py` is
-imported. **Changing `.env` requires a restart** (`docker compose restart` or
-re-running `python main.py`) to take effect.
+Environment variables are read once into an immutable `Settings` object
+(`llmproxy/config.py`) when the application is built at startup. **Changing
+`.env` requires a restart** (`docker compose restart` or re-running
+`python main.py`) to take effect.
 
 ### Model selection
 

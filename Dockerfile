@@ -6,6 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY gunicorn.conf.py .
+COPY llmproxy ./llmproxy
 
 RUN useradd -m appuser
 USER appuser
@@ -17,4 +19,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
 
 # Server di produzione (gunicorn con worker threaded, compatibili con lo streaming SSE).
 # HOST/PORT e i parametri di concorrenza sono configurabili via env.
-CMD ["sh", "-c", "gunicorn -w ${WEB_CONCURRENCY:-2} -k gthread --threads ${THREADS:-8} -t ${GUNICORN_TIMEOUT:-600} -b ${HOST:-0.0.0.0}:${PORT:-11434} main:app"]
+CMD ["sh", "-c", "gunicorn -c gunicorn.conf.py -w ${WEB_CONCURRENCY:-2} -k gthread --threads ${THREADS:-8} -t ${GUNICORN_TIMEOUT:-600} -b ${HOST:-0.0.0.0}:${PORT:-11434} main:app"]

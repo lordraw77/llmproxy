@@ -2,10 +2,10 @@
 
 ## What is llmproxy?
 
-llmproxy is a single-file Python/Flask application ([`main.py`](../main.py)) that
-acts as an **API-compatibility shim**. It presents the HTTP surface of three
-different local LLM runtimes and relays the traffic to NVIDIA's
-OpenAI-compatible inference API.
+llmproxy is a Python/Flask application (the [`llmproxy`](../llmproxy) package,
+launched via [`main.py`](../main.py)) that acts as an **API-compatibility shim**.
+It presents the HTTP surface of three different local LLM runtimes and relays the
+traffic to NVIDIA's OpenAI-compatible inference API.
 
 The name reflects its purpose: to any client, it *looks* like a locally running
 LLM server ("fake" local LLM), while the actual inference happens remotely on
@@ -64,7 +64,8 @@ Both streaming and non-streaming responses are supported:
   (`text/event-stream`), each terminated with the appropriate sentinel
   (`data: [DONE]`).
 
-Internally, `iter_nvidia_sse()` parses the upstream SSE stream and yields the
+Internally, `iter_nvidia_sse()` (in [`upstream/sse.py`](../llmproxy/upstream/sse.py))
+parses the upstream SSE stream and yields the
 text of each content delta, which is then re-wrapped in the target format. It
 also requests `stream_options.include_usage` upstream, so the final token usage
 is captured, logged, and (on the Ollama endpoints) re-exposed in the closing
@@ -72,36 +73,73 @@ chunk.
 
 ## Architecture
 
-llmproxy is deliberately minimal — a single module with no database, no state,
-and no persistence.
+llmproxy has no database and no persistence. The code is organized as a small
+**layered package** following clean-architecture boundaries: dependencies point
+inward, and each layer has a single responsibility. `main.py` is a thin entrypoint
+that builds the app and exposes `app` for gunicorn (`main:app`). The only mutable
+state is an in-memory, per-worker metrics collector powering `/stats`.
 
 ```
-main.py
-├── Configuration (env vars loaded at import time)
-├── Helpers
-│   ├── now_iso()                  → RFC3339 timestamp
-│   ├── nvidia_headers()           → Authorization + Content-Type
-│   ├── build_sampling_params()    → normalize Ollama/OpenAI sampling options
-│   ├── call_nvidia()              → build messages payload, POST upstream
-│   ├── call_nvidia_passthrough()  → forward an OpenAI payload verbatim
-│   ├── call_nvidia_embeddings()   → POST the upstream /embeddings
-│   ├── _post_upstream()           → POST with timeout + retry/backoff
-│   ├── _check_auth()              → optional inbound PROXY_API_KEY check
-│   └── iter_nvidia_sse()          → parse upstream SSE deltas (+ usage)
-├── Error handling
-│   └── handle_nvidia_error()      → map upstream errors to JSON + status
-└── Routes
-    ├── Ollama:    /, /api/version, /api/tags, /api/show, /api/chat,
-    │              /api/generate, /api/embed, /api/embeddings
-    ├── OpenAI:    /v1/models, /v1/models/<id>, /v1/chat/completions,
-    │              /v1/completions, /v1/embeddings
-    ├── llama.cpp: /completion, /props
-    └── Misc:      /health
+main.py                          # entrypoint — builds the app, exports `app`, dev server
+llmproxy/
+├── config.py                    # Settings dataclass — the only place env vars are read
+├── logging_setup.py             # TZFormatter + configure_logging()
+├── metrics.py                   # MetricsCollector (per-worker) + process_info()
+│
+├── domain/                      # pure business rules (no I/O, no framework)
+│   ├── models.py                #   ModelRegistry — resolve / resolve_embeddings / has
+│   └── sampling.py              #   build_sampling_params — normalize sampling options
+│
+├── upstream/                    # infrastructure — the only code that hits the network
+│   ├── client.py                #   NvidiaUpstream — pool, timeout, retry/backoff, telemetry
+│   └── sse.py                   #   iter_nvidia_sse — parse upstream SSE deltas (+ usage)
+│
+├── services/                    # application layer — orchestrates domain + upstream
+│   ├── completions.py           #   CompletionService — chat() / passthrough()
+│   └── embeddings.py            #   EmbeddingService — embed() / resolve / input_type
+│
+└── web/                         # interface adapters — Flask + per-dialect framing
+    ├── __init__.py              #   create_app() application factory (dependency wiring)
+    ├── container.py             #   Container — explicit dependency bundle, via deps()
+    ├── middleware.py            #   correlation id, inbound auth, access logging
+    ├── errors.py                #   map upstream errors to JSON + status
+    ├── formatting.py            #   now_iso, model_entry, require_upstream_key, telemetry
+    └── routes/                  #   one blueprint per client dialect
+        ├── ollama.py            #     /, /api/version, /api/tags, /api/show, /api/chat,
+        │                        #        /api/generate, /api/embed, /api/embeddings
+        ├── openai.py            #     /v1/models, /v1/models/<id>, /v1/chat/completions,
+        │                        #        /v1/completions, /v1/embeddings
+        ├── llamacpp.py          #     /completion, /props
+        ├── health.py            #     /health
+        └── stats.py             #     /stats (HTML dashboard), /stats.json
 ```
+
+### Layers and dependency flow
+
+```
+web (Flask, dialects)  →  services  →  domain  ←  upstream (implements the calls)
+        ↓                     ↓           ↑
+      config ──────────── logging ────────┘
+```
+
+| Layer | Responsibility | Depends on |
+|-------|----------------|------------|
+| **domain** | Pure rules: model resolution, sampling-option translation. No Flask/HTTP/env. | nothing |
+| **upstream** | The single network boundary to NVIDIA: connection pool, retries, telemetry, SSE parsing. | config, logging |
+| **services** | Builds upstream payloads and orchestrates calls. Speaks only the OpenAI format. | domain, upstream |
+| **web** | Translates each client dialect to/from the services; cross-cutting auth, logging, errors. | services, domain |
+
+Adding a new upstream provider means adding a class under `upstream/`; adding a
+new client dialect means adding a blueprint under `web/routes/` — neither touches
+the domain nor the other dialects. Everything is wired once in `create_app()`,
+which makes the app straightforward to instantiate with a stubbed upstream in
+tests.
 
 ### Key design points
 
-- **Stateless** — every request is independent; no sessions or storage.
+- **Stateless request handling** — every request is independent; no sessions or
+  persistence. The only state is an in-memory, per-worker metrics collector
+  (`metrics.py`) that survives no restart and coordinates no worker.
 - **Multi-model** — the set of exposed models is configured by `NVIDIA_MODELS`
   (comma-separated), or the single `NVIDIA_MODEL` as a fallback. All exposed
   models are advertised by the discovery endpoints, and each request is served
@@ -115,6 +153,10 @@ main.py
 - **Threaded server** — locally, `app.run(..., threaded=True)` handles
   concurrent requests; the Docker image serves the app under gunicorn with
   threaded workers. See [Deployment](deployment.md).
+- **Observability** — per-request correlation IDs and structured logging, plus a
+  live **`/stats`** dashboard (and `/stats.json`) reporting request/latency/token
+  counters, upstream call telemetry, and the process-manager view (PID, worker
+  pool, memory, uptime). See [API Reference → `/stats`](api-reference.md#get-stats).
 
 ## Technology stack
 

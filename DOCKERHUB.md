@@ -40,9 +40,11 @@ hosted NVIDIA model.
   (`Authorization: Bearer` or `X-Api-Key`); `/` and `/health` stay open for
   health-checks.
 - **Observability** — per-request correlation IDs, structured logging,
-  `/health` with an optional live upstream probe (`?upstream=1`).
-- **Stateless & tiny** — a single Python/Flask module, no database, run under
-  gunicorn.
+  `/health` with an optional live upstream probe (`?upstream=1`), plus a live
+  **`/stats`** dashboard (and `/stats.json`) with request/latency/token metrics
+  and a process-manager view (PID, workers, memory, uptime).
+- **Clean architecture** — a small layered Python/Flask package (config · domain
+  · upstream · services · web), no database, run under gunicorn.
 
 ---
 
@@ -154,6 +156,22 @@ the `Makefile`'s `PLATFORMS`).
   models, default model).
 - `GET /health?upstream=1` — also probes NVIDIA; returns `status: degraded`
   (HTTP `503`) if the provider is unreachable.
+- `GET /stats` — self-contained, auto-refreshing **HTML dashboard** with live
+  statistics, metrics (requests, latency, tokens, upstream calls) and the
+  **process-manager** view (PID, worker pool, memory, uptime). Open it in a
+  browser at `http://<host>:11434/stats`.
+- `GET /stats.json` — the same data as JSON for scraping/scripting.
+
+> Metrics are in-memory **per gunicorn worker**: one response reflects the worker
+> (`process.pid`) that served it. `/stats` and `/stats.json` honour `PROXY_API_KEY`
+> like the API endpoints; only `/` and `/health` stay open for health-checks.
+
+### Smoke test (metrics)
+
+```bash
+curl http://localhost:11434/stats.json      # JSON snapshot
+# open http://localhost:11434/stats in a browser for the dashboard
+```
 
 ---
 
@@ -164,5 +182,7 @@ the `Makefile`'s `PLATFORMS`).
 
 ## License
 
-See the [LICENSE](https://github.com/lordraw77/llmproxy) in the GitHub
-repository.
+Released under the **MIT License** — free to use, copy, modify, and distribute,
+with attribution and no warranty. See the
+[LICENSE](https://github.com/lordraw77/llmproxy/blob/main/LICENSE) in the GitHub
+repository for the full text.

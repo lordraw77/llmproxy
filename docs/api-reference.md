@@ -44,6 +44,8 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 | POST | `/completion` | llama.cpp | ✅ (default off) | Native llama-server completion |
 | GET | `/props` | llama.cpp | — | Server properties |
 | GET | `/health` | Misc | — | Health check (`?upstream=1` probes NVIDIA) |
+| GET | `/stats` | Misc | — | HTML dashboard: statistics, metrics, process manager |
+| GET | `/stats.json` | Misc | — | Same data as JSON (machine-readable) |
 
 ---
 
@@ -407,6 +409,61 @@ field (`ok` / `error:<code>` / `unreachable`); if the provider is unreachable th
 `status` becomes `degraded` and the endpoint returns HTTP `503`.
 
 Note: the Docker `HEALTHCHECK` polls `GET /health`.
+
+---
+
+### `GET /stats`
+
+A self-contained, auto-refreshing (every 5s) **HTML dashboard** showing live
+statistics, metrics, and the process-manager view. Open it in a browser at
+`http://<host>:11434/stats`. No external assets, light/dark aware.
+
+### `GET /stats.json`
+
+The same data as JSON, for scraping or scripting.
+
+**Response (shape):**
+
+```json
+{
+  "metrics": {
+    "started_at": "2026-07-24T06:00:00.000000Z",
+    "uptime_seconds": 3600.0,
+    "requests": {
+      "total": 128,
+      "in_flight": 1,
+      "errors": 2,
+      "by_status": { "200": 124, "401": 2, "502": 2 },
+      "by_path": { "/v1/chat/completions": 90, "/api/chat": 34 }
+    },
+    "latency_ms": { "avg": 812.4, "max": 5210.0, "count": 128 },
+    "tokens": { "prompt": 40213, "completion": 18902, "total": 59115 },
+    "upstream": { "calls": 126, "errors": 2, "avg_latency_ms": 780.1, "max_latency_ms": 5180.0 }
+  },
+  "process": {
+    "pid": 17,
+    "server": "gunicorn",
+    "workers_configured": 2,
+    "threads_per_worker": 8,
+    "worker_timeout_seconds": 600,
+    "memory_rss_mb": 61.3,
+    "python": "3.12.4",
+    "platform": "Linux-..."
+  },
+  "models": { "exposed": ["..."], "default": "...", "embeddings": "..." }
+}
+```
+
+Both endpoints respect the optional inbound `PROXY_API_KEY` (they are **not**
+auth-exempt, unlike `/` and `/health`). The `/stats` and `/stats.json` requests
+are themselves excluded from the counters, so the dashboard's auto-refresh does
+not skew the numbers.
+
+> **Per-worker metrics.** Counters live in memory, per gunicorn worker. A single
+> response therefore reflects only the worker (see `process.pid`) that served it;
+> with `WEB_CONCURRENCY > 1` the numbers rotate across workers. For aggregated,
+> cross-worker metrics, scrape `/stats.json` per worker or put a real metrics
+> backend (e.g. Prometheus) in front.
 
 ---
 
