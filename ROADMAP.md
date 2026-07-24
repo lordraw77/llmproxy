@@ -3,9 +3,21 @@
 Development direction for **llmproxy**. Dates are indicative; priority is driven
 by items marked as "core". Versioning follows [SemVer](https://semver.org/).
 
-Current state — **v1.1.0**: a proxy to a **single provider** (NVIDIA,
+Current state — **v1.1.4**: a proxy to a **single provider** (NVIDIA,
 OpenAI-compatible API) that exposes the Ollama, OpenAI and llama.cpp APIs, with
-embeddings, retry/backoff, inbound auth and in-process metrics.
+embeddings, retry/backoff, inbound auth and in-process metrics. Since v1.1.0 the
+`1.1.x` line has added, without breaking changes:
+
+- **v1.1.1** — `FORCE_UPSTREAM_STREAM`: always stream towards the upstream and
+  transparently re-aggregate into a non-streaming reply, avoiding read timeouts
+  on slow/non-streaming generations.
+- **v1.1.2** — outbound **HTTP/HTTPS proxy** support
+  (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`) for corporate egress networks.
+- **v1.1.3** — prefix-less OpenAI routes (served with and without `/v1`) and
+  `DEBUG` logging of the upstream response body.
+- **v1.1.4** — fix: preserve **tool calls** (and the real `finish_reason`) when
+  re-aggregating a `FORCE_UPSTREAM_STREAM` response, so forced/auto function
+  calls are no longer lost on non-streaming requests.
 
 ---
 
@@ -44,8 +56,9 @@ Goal: service continuity when a model or a provider is unavailable.
 
 Goal: run inside corporate networks and isolated environments.
 
-- [ ] **Outbound network proxy** (HTTP/HTTPS/SOCKS5) for upstream connections,
-      with `NO_PROXY` and per-provider proxy settings.
+- [x] **Outbound HTTP/HTTPS proxy** for upstream connections, with `NO_PROXY`
+      *(shipped in v1.1.2)*.
+- [ ] Extend it: **SOCKS5** support and **per-provider** proxy settings.
 - [ ] **TLS** configuration: custom CA, mTLS to upstreams, configurable
       certificate verification.
 - [ ] Granular timeouts and keep-alive per provider; connection-pool tuning.
@@ -63,6 +76,8 @@ Ideas worth considering, ordered by value/effort ratio.
 - [ ] **Rate limiting / quotas** per inbound API key (tokens/min, requests/min).
 - [ ] **Queue and max concurrency** towards upstreams to avoid cascading 429s.
 - [ ] **Robust streaming**: upstream cancellation when the client disconnects.
+      *(Partially addressed in v1.1.1: `FORCE_UPSTREAM_STREAM` streams upstream
+      and re-aggregates to dodge non-streaming read timeouts.)*
 
 ### Observability
 - [ ] **Prometheus `/metrics`** endpoint (in-process metrics already exist).

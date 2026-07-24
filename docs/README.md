@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../img/llmproxy.png" alt="llmproxy logo" width="240">
+</p>
+
 # llmproxy — Documentation
 [![GitHub License](https://img.shields.io/github/license/lordraw77/llmproxy)](../LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/lordraw77/llmproxy)](https://github.com/lordraw77/llmproxy/stargazers)
@@ -20,12 +24,16 @@ completions, and **embeddings**, supports streaming, multi-model discovery,
 optional inbound authentication, automatic retries on transient upstream errors,
 and a live **`/stats`** metrics & process dashboard.
 
-```
-┌──────────────┐     Ollama / OpenAI / llama.cpp      ┌──────────┐   OpenAI    ┌───────────────────┐
-│  Your client │  ─────────── HTTP ─────────────────▶ │ llmproxy  │ ──────────▶ │  NVIDIA API       │
-│ (Open WebUI, │ ◀────── streaming / JSON ─────────── │  (Flask) │ ◀────────── │ integrate.api...  │
-│  curl, SDK)  │                                      └──────────┘             └───────────────────┘
-└──────────────┘
+```mermaid
+flowchart LR
+    client["Your client<br/>(Open WebUI, curl, SDK)"]
+    proxy["llmproxy<br/>(Flask)"]
+    nvidia["NVIDIA API<br/>integrate.api.nvidia.com/v1"]
+
+    client -->|"Ollama / OpenAI / llama.cpp<br/>HTTP request"| proxy
+    proxy -->|"OpenAI request"| nvidia
+    nvidia -->|"streaming / JSON"| proxy
+    proxy -->|"streaming / JSON response"| client
 ```
 
 ## Documentation index
