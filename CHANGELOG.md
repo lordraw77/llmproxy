@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streaming upstream responses are now always closed.** The SSE parser stops at
+  the `[DONE]` marker, so the upstream body was never drained to EOF and none of
+  the streaming routes released it: the connection was dropped instead of
+  returning to the pool, and clients aborting mid-stream produced
+  `Connection pool is full, discarding connection`. Every streaming generator
+  (`/v1/chat/completions`, `/v1/completions`, `/api/chat`, `/api/generate`,
+  `/completion`) now closes the upstream in a `finally`, as does the
+  `FORCE_UPSTREAM_STREAM` re-aggregation path.
+
 ### Added
 
 - **Unit test suite** (`tests/`, pytest). Offline and deterministic — no network,

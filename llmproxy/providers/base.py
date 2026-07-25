@@ -46,6 +46,9 @@ class AggregatedResponse:
     def json(self):
         return self._llmproxy_json
 
+    def close(self):
+        """No-op: there is no connection behind a synthetic response."""
+
 
 def resp_json(resp):
     """Parse ``resp`` as JSON once and memoize the result on the response object.
@@ -336,7 +339,12 @@ class Provider:
         """Consume an OpenAI-SSE stream and rebuild a non-streaming chat.completion."""
         usage = {}
         meta = {}
-        parts = [piece for piece in iter_nvidia_sse(resp, usage, meta)]
+        try:
+            parts = [piece for piece in iter_nvidia_sse(resp, usage, meta)]
+        finally:
+            # iter_nvidia_sse stops at the [DONE] marker, so the body is not
+            # drained: without this the connection never returns to the pool.
+            resp.close()
         content = "".join(parts)
         tool_calls = meta.get("tool_calls")
         finish_reason = meta.get("finish_reason") or ("tool_calls" if tool_calls else "stop")

@@ -64,9 +64,12 @@ def v1_chat_completions():
 
     def relay():
         """Relay the upstream SSE bytes to the client unchanged."""
-        for chunk in upstream.iter_content(chunk_size=None):
-            if chunk:
-                yield chunk
+        try:
+            for chunk in upstream.iter_content(chunk_size=None):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
 
     return Response(relay(), mimetype="text/event-stream")
 
@@ -123,15 +126,20 @@ def v1_completions():
     def generate():
         """Yield the upstream stream re-framed as OpenAI ``text_completion`` SSE events, then ``[DONE]``."""
         usage = {}
-        for piece in iter_nvidia_sse(upstream, usage):
-            yield "data: " + json.dumps({
-                "id": "cmpl-llmproxy",
-                "object": "text_completion",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [{"text": piece, "index": 0, "logprobs": None, "finish_reason": None}],
-            }) + "\n\n"
-        log_stream_usage(logger, metrics, rid, usage)
-        yield "data: [DONE]\n\n"
+        try:
+            for piece in iter_nvidia_sse(upstream, usage):
+                yield "data: " + json.dumps({
+                    "id": "cmpl-llmproxy",
+                    "object": "text_completion",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [{"text": piece, "index": 0, "logprobs": None, "finish_reason": None}],
+                }) + "\n\n"
+            log_stream_usage(logger, metrics, rid, usage)
+            yield "data: [DONE]\n\n"
+        finally:
+            # Runs outside the request context (the client may also have hung up
+            # mid-stream): release the upstream connection back to the pool.
+            upstream.close()
 
     return Response(generate(), mimetype="text/event-stream")

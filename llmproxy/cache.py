@@ -51,6 +51,9 @@ class CachedResponse:
     def json(self):
         return self._llmproxy_json
 
+    def close(self):
+        """No-op: there is no connection behind a replayed response."""
+
 
 class ResponseCache:
     """Thread-safe TTL + LRU cache of non-streaming upstream response bodies."""

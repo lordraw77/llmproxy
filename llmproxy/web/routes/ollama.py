@@ -108,20 +108,23 @@ def chat():
         )
         suffix = '}, "done": false}\n'
         usage = {}
-        for piece in iter_nvidia_sse(upstream, usage):
-            yield prefix + json.dumps(piece) + suffix
-        log_stream_usage(logger, metrics, rid, usage)
-        done = {
-            "model": model,
-            "created_at": now_iso(),
-            "message": {"role": "assistant", "content": ""},
-            "done": True,
-            "done_reason": "stop",
-        }
-        if usage:
-            done["prompt_eval_count"] = usage.get("prompt_tokens")
-            done["eval_count"] = usage.get("completion_tokens")
-        yield json.dumps(done) + "\n"
+        try:
+            for piece in iter_nvidia_sse(upstream, usage):
+                yield prefix + json.dumps(piece) + suffix
+            log_stream_usage(logger, metrics, rid, usage)
+            done = {
+                "model": model,
+                "created_at": now_iso(),
+                "message": {"role": "assistant", "content": ""},
+                "done": True,
+                "done_reason": "stop",
+            }
+            if usage:
+                done["prompt_eval_count"] = usage.get("prompt_tokens")
+                done["eval_count"] = usage.get("completion_tokens")
+            yield json.dumps(done) + "\n"
+        finally:
+            upstream.close()
 
     return Response(generate(), mimetype="application/x-ndjson")
 
@@ -172,20 +175,23 @@ def generate_endpoint():
         )
         suffix = ', "done": false}\n'
         usage = {}
-        for piece in iter_nvidia_sse(upstream, usage):
-            yield prefix + json.dumps(piece) + suffix
-        log_stream_usage(logger, metrics, rid, usage)
-        done = {
-            "model": model,
-            "created_at": now_iso(),
-            "response": "",
-            "done": True,
-            "done_reason": "stop",
-        }
-        if usage:
-            done["prompt_eval_count"] = usage.get("prompt_tokens")
-            done["eval_count"] = usage.get("completion_tokens")
-        yield json.dumps(done) + "\n"
+        try:
+            for piece in iter_nvidia_sse(upstream, usage):
+                yield prefix + json.dumps(piece) + suffix
+            log_stream_usage(logger, metrics, rid, usage)
+            done = {
+                "model": model,
+                "created_at": now_iso(),
+                "response": "",
+                "done": True,
+                "done_reason": "stop",
+            }
+            if usage:
+                done["prompt_eval_count"] = usage.get("prompt_tokens")
+                done["eval_count"] = usage.get("completion_tokens")
+            yield json.dumps(done) + "\n"
+        finally:
+            upstream.close()
 
     return Response(generate(), mimetype="application/x-ndjson")
 
