@@ -9,7 +9,7 @@ from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage, model_entry
+from ..formatting import first_content, log_stream_usage, model_entry
 
 bp = Blueprint("openai", __name__)
 
@@ -109,7 +109,7 @@ def v1_completions():
 
     if not stream:
         data = resp_json(upstream)
-        content = data["choices"][0]["message"]["content"]
+        content = first_content(data)
         usage = data.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         return jsonify({
             "id": "cmpl-llmproxy",

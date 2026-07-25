@@ -9,7 +9,7 @@ from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage
+from ..formatting import first_content, log_stream_usage
 
 bp = Blueprint("llamacpp", __name__)
 
@@ -45,7 +45,7 @@ def llama_completion():
 
     if not stream:
         data = resp_json(upstream)
-        content = data["choices"][0]["message"]["content"]
+        content = first_content(data)
         usage = data.get("usage") or {}
         return jsonify({
             "content": content,

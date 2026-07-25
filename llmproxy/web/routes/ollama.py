@@ -10,7 +10,7 @@ from flask import Blueprint, Response, g, jsonify, request
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage, now_iso
+from ..formatting import first_content, log_stream_usage, now_iso
 
 bp = Blueprint("ollama", __name__)
 
@@ -81,7 +81,7 @@ def chat():
 
     if not stream:
         data = resp_json(upstream)
-        content = data["choices"][0]["message"]["content"]
+        content = first_content(data)
         usage = data.get("usage") or {}
         result = {
             "model": model,
@@ -150,7 +150,7 @@ def generate_endpoint():
 
     if not stream:
         data = resp_json(upstream)
-        content = data["choices"][0]["message"]["content"]
+        content = first_content(data)
         usage = data.get("usage") or {}
         result = {
             "model": model,

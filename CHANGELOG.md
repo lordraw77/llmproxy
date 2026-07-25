@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`/v1/chat/completions`, `/v1/completions`, `/api/chat`, `/api/generate`,
   `/completion`) now closes the upstream in a `finally`, as does the
   `FORCE_UPSTREAM_STREAM` re-aggregation path.
+- **Malformed upstream replies no longer return 500.** Four routes read
+  `data["choices"][0]["message"]["content"]` unguarded, so an upstream answering
+  200 with `{"choices": []}` (content filter, applicative error, provider
+  off-standard) raised `IndexError`. The new `first_message()` / `first_content()`
+  helpers in `web/formatting.py` degrade to an empty assistant message, and
+  normalize the `content: null` of a tool-calls-only reply to `""` — the Ollama
+  and llama.cpp dialects have no field to carry the tool calls.
 
 ### Added
 
