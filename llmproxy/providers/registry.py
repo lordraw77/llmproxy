@@ -61,8 +61,16 @@ class ProviderRegistry:
         return self.default_model
 
     def provider_for(self, name):
-        """Return ``(provider, native_model_id)`` for an exposed chat model name."""
+        """Return ``(provider, native_model_id)`` for an exposed chat model name.
+
+        Raises:
+            ValueError: if no provider serves ``name``. With an empty catalogue
+                :meth:`resolve` falls back to ``""`` and there is nothing to route
+                to; the web layer maps this to a 400.
+        """
         entry = self._chat.get(name) or self._chat.get(self.resolve(name))
+        if entry is None:
+            raise ValueError(f"no provider serves chat model '{name}'")
         return entry.provider, entry.model_id
 
     # --- embeddings -------------------------------------------------------

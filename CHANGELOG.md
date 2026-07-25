@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   helpers in `web/formatting.py` degrade to an empty assistant message, and
   normalize the `content: null` of a tool-calls-only reply to `""` — the Ollama
   and llama.cpp dialects have no field to carry the tool calls.
+- **Routing refusals are now `400` JSON instead of `500` HTML.** Only
+  `RequestException` had a handler, so an unknown embeddings model, embeddings
+  asked of a chat-only native provider (Anthropic, Gemini), or a request against
+  an empty catalogue reached the client as Flask's HTML error page. They are now
+  `{"error": {"message": …, "type": "invalid_request_error"}}` with status `400`,
+  documented in `docs/api-reference.md`. `ProviderRegistry.provider_for()` also
+  raises explicitly instead of dereferencing `None`, which used to be an
+  `AttributeError` when no model was configured.
 
 ### Added
 

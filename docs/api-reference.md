@@ -517,10 +517,33 @@ passed through unchanged.
 | Situation | Status | Body |
 |-----------|--------|------|
 | Missing/invalid inbound key (when `PROXY_API_KEY` is set) | `401` | `{"error": {"message": "unauthorized", "type": "authentication_error"}}` |
+| Requested model/capability not served by any provider | `400` | `{"error": {"message": "<reason>", "type": "invalid_request_error"}}` |
 | Provider credential not set | **upstream status** (usually `401`) | The provider's own JSON error body, forwarded verbatim |
 | Upstream provider returned an error | **upstream status** | The provider's JSON error body, **forwarded verbatim** |
 | Upstream returned a non-JSON error | upstream status | `{"error": {"message": "<raw text>", "type": "upstream_error", "code": <status>}}` |
 | No response from upstream (timeout, DNS, connection refused) | `502` | `{"error": {"message": "<reason>", "type": "upstream_request_error"}}` |
+
+### Routing errors (`400`)
+
+Some requests cannot be routed at all, and never reach an upstream. These are
+client errors, and are answered with `400` in the OpenAI error format:
+
+- an **embeddings model** no configured provider serves;
+- **embeddings asked of a provider that has no such endpoint** — the native
+  Anthropic and Gemini providers expose chat only;
+- **any model** when the catalogue is empty (no provider declares one).
+
+```json
+{
+  "error": {
+    "message": "no provider serves embeddings model 'nomic-embed-text'",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+Note that an **unknown chat model is not an error**: the registry falls back to
+the default model. The `400` occurs only when there is no default to fall back to.
 
 ### Error propagation
 
