@@ -8,6 +8,8 @@ Both respect the optional inbound ``PROXY_API_KEY`` like every other endpoint
 :mod:`llmproxy.metrics`.
 """
 
+from html import escape
+
 from flask import Blueprint, Response, jsonify
 
 from ...metrics import process_info
@@ -49,6 +51,17 @@ def stats_dashboard():
 
 # --- HTML rendering (self-contained, no external assets) --------------------
 
+def _h(value):
+    """Escape ``value`` for interpolation into the dashboard HTML.
+
+    The page is built with f-strings, so every dynamic value has to be escaped at
+    the point of use. Metric keys are route names and configuration comes from
+    ``providers.toml``, but neither is a reason to let markup through: escaping
+    here is what keeps a template-less renderer safe.
+    """
+    return escape(str(value), quote=True)
+
+
 def _fmt_uptime(seconds):
     """Render a duration in seconds as ``NdNhNmNs`` (dropping leading zero units)."""
     seconds = int(seconds)
@@ -71,7 +84,9 @@ def _rows(mapping):
     if not mapping:
         return '<tr><td class="k">—</td><td class="v">0</td></tr>'
     items = sorted(mapping.items(), key=lambda kv: (-kv[1], kv[0]))
-    return "".join(f'<tr><td class="k">{k}</td><td class="v">{v}</td></tr>' for k, v in items)
+    return "".join(
+        f'<tr><td class="k">{_h(k)}</td><td class="v">{_h(v)}</td></tr>' for k, v in items
+    )
 
 
 def _render(payload):
@@ -187,14 +202,14 @@ def _render(payload):
   <div class="card">
     <h2>Process manager</h2>
     <table>
-      <tr><td class="k">pid</td><td class="v">{p['pid']}</td></tr>
-      <tr><td class="k">server</td><td class="v">{p['server']}</td></tr>
-      <tr><td class="k">workers</td><td class="v">{p['workers_configured']}</td></tr>
-      <tr><td class="k">threads/worker</td><td class="v">{p['threads_per_worker']}</td></tr>
-      <tr><td class="k">worker timeout</td><td class="v">{p['worker_timeout_seconds']}s</td></tr>
-      <tr><td class="k">memory rss</td><td class="v">{p['memory_rss_mb']} MiB</td></tr>
+      <tr><td class="k">pid</td><td class="v">{_h(p['pid'])}</td></tr>
+      <tr><td class="k">server</td><td class="v">{_h(p['server'])}</td></tr>
+      <tr><td class="k">workers</td><td class="v">{_h(p['workers_configured'])}</td></tr>
+      <tr><td class="k">threads/worker</td><td class="v">{_h(p['threads_per_worker'])}</td></tr>
+      <tr><td class="k">worker timeout</td><td class="v">{_h(p['worker_timeout_seconds'])}s</td></tr>
+      <tr><td class="k">memory rss</td><td class="v">{_h(p['memory_rss_mb'])} MiB</td></tr>
       <tr><td class="k">uptime</td><td class="v">{_fmt_uptime(m['uptime_seconds'])}</td></tr>
-      <tr><td class="k">python</td><td class="v">{p['python']}</td></tr>
+      <tr><td class="k">python</td><td class="v">{_h(p['python'])}</td></tr>
     </table>
   </div>
 
@@ -212,16 +227,16 @@ def _render(payload):
     <h2>Models</h2>
     <table>
       <tr><td class="k">providers</td><td class="v">{len(md.get('providers', []))}</td></tr>
-      <tr><td class="k">default</td><td class="v">{md['default']}</td></tr>
-      <tr><td class="k">embeddings</td><td class="v">{md['embeddings']}</td></tr>
+      <tr><td class="k">default</td><td class="v">{_h(md['default'])}</td></tr>
+      <tr><td class="k">embeddings</td><td class="v">{_h(md['embeddings'])}</td></tr>
       <tr><td class="k">exposed</td><td class="v">{len(md['exposed'])}</td></tr>
     </table>
   </div>
 </div>
 
 <div class="foot">
-  Metrics are per-worker (this response was served by PID {p['pid']}).
-  JSON at <code>/stats.json</code>. Started {m['started_at']}.
+  Metrics are per-worker (this response was served by PID {_h(p['pid'])}).
+  JSON at <code>/stats.json</code>. Started {_h(m['started_at'])}.
 </div>
 </body>
 </html>"""

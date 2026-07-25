@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `/health?upstream=1` now reports a per-provider `upstreams` status map;
     `/stats` shows the provider count.
 
+### Fixed
+
+- **Stored XSS and unbounded metric cardinality on `/stats`.** Per-path counters
+  recorded the raw `request.path`, an attacker-controlled and unbounded value that
+  was then interpolated into the dashboard HTML without escaping. Requests are now
+  labelled with the **matched URL rule** (a fixed string from the routing table,
+  with unmatched 404s collapsed into a single bucket), and every dynamic value in
+  the dashboard is HTML-escaped at the point of use.
+
 ## [1.2.0] - 2026-07-24
 
 ### Added

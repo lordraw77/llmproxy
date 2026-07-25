@@ -41,6 +41,22 @@ def _check_auth(settings):
 # not skew the counters.
 _METRICS_EXEMPT = {"/stats", "/stats.json"}
 
+#: Label recorded for a request that matched no route (a 404).
+_UNMATCHED = "<unmatched>"
+
+
+def _metrics_label():
+    """Return a bounded, trusted label identifying the current request's route.
+
+    Deliberately **not** ``request.path``: that value is attacker-controlled and
+    unbounded, so recording it would let any client grow ``by_path`` without limit
+    and place arbitrary text into the ``/stats`` dashboard. The matched URL rule is
+    a fixed string from the routing table, which caps the key space at the number
+    of registered routes; unmatched requests (404s) collapse into one bucket.
+    """
+    rule = request.url_rule
+    return rule.rule if rule is not None else _UNMATCHED
+
 
 def register_middleware(app):
     """Attach the before/after-request hooks to ``app``."""
@@ -90,7 +106,7 @@ def register_middleware(app):
                 response.status_code, elapsed_ms,
             )
             if getattr(g, "metrics_tracked", False):
-                deps().metrics.record(request.path, response.status_code, elapsed_ms)
+                deps().metrics.record(_metrics_label(), response.status_code, elapsed_ms)
         return response
 
     @app.teardown_request
