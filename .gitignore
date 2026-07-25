@@ -47,5 +47,6 @@ Thumbs.db
 *.log
 
 # Internal working documents (not part of the published docs)
+docs/roadmap-plan.md
 docs/roadmap-fix.md
 docs/roadmap-refactor.md

@@ -38,6 +38,7 @@ Thumbs.db
 
 # Docs / misc
 *.md
+docs/roadmap-plan.md
 docs/roadmap-fix.md
 docs/roadmap-refactor.md
 .claude/
