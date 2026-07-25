@@ -14,11 +14,10 @@ _EXT_KEY = "llmproxy"
 class Container:
     """Bundle of application-scoped collaborators."""
 
-    def __init__(self, settings, logger, registry, upstream, completions, embeddings, metrics, cache=None):
+    def __init__(self, settings, logger, registry, completions, embeddings, metrics, cache=None):
         self.settings = settings
         self.logger = logger
         self.registry = registry
-        self.upstream = upstream
         self.completions = completions
         self.embeddings = embeddings
         self.metrics = metrics

@@ -2,6 +2,20 @@
 
 ## Docker Compose (recommended)
 
+Three compose files are provided:
+
+| File | Use |
+|------|-----|
+| [`docker-compose.yml`](../docker-compose.yml) | Development / quick start (`build: .`). Multi-provider lines commented. |
+| [`docker-compose.prod.env.yml`](../docker-compose.prod.env.yml) | **Production, single provider** from `.env` (`NVIDIA_*`). |
+| [`docker-compose.prod.toml.yml`](../docker-compose.prod.toml.yml) | **Production, multi-provider** from a mounted `providers.toml`. |
+
+The production files use the prebuilt image, bind the port to loopback (front them
+with a TLS reverse proxy), add log rotation, a memory limit, and
+`no-new-privileges`. Pick with `-f`, e.g.
+`docker compose -f docker-compose.prod.toml.yml up -d`; see the
+[Migration guide](migration.md#docker-production) for the full walkthrough.
+
 The bundled [`docker-compose.yml`](../docker-compose.yml) is the simplest way to
 run llmproxy as a long-lived service:
 
@@ -31,6 +45,35 @@ Key properties:
   (see [Configuration](configuration.md)).
 - **Port mapping** — `${PORT}` controls both the container's listening port and
   the published host port. They are always kept in sync.
+
+### Multi-provider in Docker
+
+To serve several upstreams, mount a [`providers.toml`](configuration.md#multi-provider)
+into the container and point `PROVIDERS_CONFIG` at it. The bundled compose file
+ships both lines commented out — uncomment them:
+
+```yaml
+    environment:
+      PROVIDERS_CONFIG: /config/providers.toml
+    volumes:
+      - ./providers.toml:/config/providers.toml:ro
+```
+
+You can generate that `providers.toml` from the same `.env`, without a local
+Python install, straight from the image (writes to the host via stdout):
+
+```bash
+docker compose run --rm --no-TTY llmproxy \
+  python -m llmproxy.scripts.env_to_toml - > providers.toml
+# or: make migrate-config-docker
+```
+
+Then edit it (add providers / API keys as `${ENV_VAR}` refs), make sure those env
+vars are in `.env`, and `docker compose up -d`. Verify with
+`curl localhost:$PORT/health` (the `providers` count) and
+`curl 'localhost:$PORT/health?upstream=1'` (per-provider reachability). Full
+walkthrough and the `docker run` equivalent are in
+[Configuration → Migrating the env config](configuration.md#migrating-the-env-config-to-providerstoml).
 
 ### The container image
 

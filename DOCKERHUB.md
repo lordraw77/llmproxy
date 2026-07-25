@@ -31,8 +31,12 @@ hosted NVIDIA model.
   `/api/embeddings`, with a dedicated default embeddings model.
 - **Streaming** — SSE for OpenAI/llama.cpp, NDJSON for Ollama; token usage is
   logged and re-exposed.
-- **Multi-model** — advertise a whole list of NVIDIA models; clients with a
+- **Multi-model** — advertise a whole list of models; clients with a
   model picker (e.g. Open WebUI) just work.
+- **Multi-provider** — serve several upstreams at once via `providers.toml`
+  (OpenAI-compatible, Azure, Anthropic, Gemini); all their models are exposed
+  together as `provider:model` and routed to the owning provider. With no file, a
+  single NVIDIA provider is built from the `NVIDIA_*` vars (zero-config).
 - **Vision** — pass `image_url` content to vision-capable models.
 - **Resilient** — configurable upstream timeout and automatic retry with
   exponential backoff on `429`/`5xx`/network errors (honours `Retry-After`).
@@ -111,8 +115,9 @@ All configuration is via environment variables.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NVIDIA_API_KEY` | _(required)_ | Your NVIDIA API key (`nvapi-…`). |
-| `NVIDIA_API_BASE` | `https://integrate.api.nvidia.com/v1` | Upstream base URL. |
+| `PROVIDERS_CONFIG` | `providers.toml` | Path to the multi-provider TOML file. When present it defines the providers; when absent, the `NVIDIA_*` vars synthesize a single provider. |
+| `NVIDIA_API_KEY` | _(required in env fallback)_ | Your NVIDIA API key (`nvapi-…`). |
+| `NVIDIA_API_BASE` | `https://integrate.api.nvidia.com/v1` | Upstream base URL (env fallback). |
 | `NVIDIA_MODEL` | `meta/llama-3.1-8b-instruct` | Single default model (fallback). |
 | `NVIDIA_MODELS` | _(unset)_ | Comma-separated model list; the first is the default. Overrides `NVIDIA_MODEL`. |
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | Default model for embeddings endpoints. |

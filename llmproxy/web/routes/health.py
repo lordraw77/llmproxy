@@ -17,25 +17,27 @@ def health():
         status is ``degraded`` and the HTTP status is 503.
     """
     container = deps()
-    settings = container.settings
     registry = container.registry
 
     info = {
         "status": "ok",
-        "api_key_configured": bool(settings.nvidia_api_key),
+        "providers": len(registry.providers),
         "models": len(registry.models),
         "default_model": registry.default_model,
     }
 
     if request.args.get("upstream", "").lower() in ("1", "true", "yes"):
-        try:
-            r = container.upstream.get("/models", timeout=5)
-            info["upstream"] = "ok" if r.ok else f"error:{r.status_code}"
-            if not r.ok:
+        upstreams = {}
+        for provider in registry.providers:
+            try:
+                r = provider.health(timeout=5)
+                upstreams[provider.name] = "ok" if r.ok else f"error:{r.status_code}"
+                if not r.ok:
+                    info["status"] = "degraded"
+            except requests.exceptions.RequestException:
+                upstreams[provider.name] = "unreachable"
                 info["status"] = "degraded"
-        except requests.exceptions.RequestException:
-            info["upstream"] = "unreachable"
-            info["status"] = "degraded"
+        info["upstreams"] = upstreams
         return jsonify(info), 200 if info["status"] == "ok" else 503
 
     return jsonify(info)

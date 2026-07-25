@@ -12,7 +12,8 @@ All configuration is provided through environment variables, typically via a
 | `PORT` | `11434` | No | TCP port to listen on. `11434` is Ollama's default port, which is why most Ollama clients work out of the box. |
 | `LOG_LEVEL` | `INFO` | No | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `DEBUG` also logs the full payload sent upstream. See [Logging & telemetry](logging.md). |
 | `LOG_TZ` | `TZ` env, else `UTC` | No | IANA timezone name (e.g. `Europe/Rome`) for the clock in log lines. Invalid names fall back to `UTC`. |
-| `NVIDIA_API_BASE` | `https://integrate.api.nvidia.com/v1` | No | Base URL of the upstream OpenAI-compatible API. Change it to target a different compatible endpoint. |
+| `PROVIDERS_CONFIG` | `providers.toml` | No | Path to the declarative [multi-provider](#multi-provider) config. When the file exists it defines the providers and supersedes the `NVIDIA_*` vars below; when it is absent, a single NVIDIA provider is synthesized from those vars (zero-config fallback). |
+| `NVIDIA_API_BASE` | `https://integrate.api.nvidia.com/v1` | No | Base URL of the upstream OpenAI-compatible API. Change it to target a different compatible endpoint. Used only by the env fallback (no `providers.toml`). |
 | `NVIDIA_API_KEY` | *(empty)* | **Yes** | Bearer token sent to the upstream API. Without it, every inference endpoint returns HTTP 500. |
 | `NVIDIA_MODEL` | `meta/llama-3.1-8b-instruct` | No | Single-model / default model. Used as the fallback default when `NVIDIA_MODELS` is not set. |
 | `NVIDIA_MODELS` | value of `NVIDIA_MODEL` | No | **Comma-separated list** of models to expose. All of them appear in the discovery endpoints (so they show up in Open WebUI's model picker). The **first entry is the default**. See [Multi-model support](#multi-model-support). |
@@ -163,6 +164,192 @@ Behavior:
 
 If `NVIDIA_MODELS` is unset, llmproxy falls back to the single `NVIDIA_MODEL`
 value, so existing single-model setups keep working unchanged.
+
+## Multi-provider
+
+Beyond the single NVIDIA upstream, llmproxy can serve **several providers at
+once**, each with its own credentials, base URL, and set of models. Providers are
+declared in a TOML file pointed at by `PROVIDERS_CONFIG` (default
+`providers.toml`); see [`providers.toml.example`](../providers.toml.example).
+
+```toml
+[[provider]]
+name = "nvidia"
+type = "openai_compatible"
+base_url = "https://integrate.api.nvidia.com/v1"
+api_key = "${NVIDIA_API_KEY}"
+models = ["meta/llama-3.1-8b-instruct"]
+embeddings_models = ["nvidia/nv-embedqa-e5-v5"]
+
+[[provider]]
+name = "anthropic"
+type = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+models = ["claude-opus-4-8", "claude-sonnet-5"]
+```
+
+**Provider types**
+
+| `type` | Upstream | Default `base_url` | Auth |
+|--------|----------|--------------------|------|
+| `openai_compatible` | NVIDIA, vLLM, Groq, OpenRouter, LM Studio, local Ollama/llama.cpp… | *(required)* | `Authorization: Bearer` |
+| `openai` | OpenAI | `https://api.openai.com/v1` | `Authorization: Bearer` |
+| `mistral` | Mistral | `https://api.mistral.ai/v1` | `Authorization: Bearer` |
+| `azure` | Azure OpenAI | *(required, resource root)* | `api-key` header + `api-version` |
+| `anthropic` | Anthropic (Claude) | `https://api.anthropic.com` | `x-api-key` + `anthropic-version` |
+| `gemini` | Google Gemini | `…/v1beta` generativelanguage API | `x-goog-api-key` |
+
+`anthropic` and `gemini` are translated natively to and from the OpenAI shape
+(request, response, and streaming), so clients keep speaking OpenAI/Ollama.
+
+**Per-provider keys**: `name`, `type`, `base_url`, `api_key`, `models`,
+`embeddings_models`, `timeout`, `api_version` (Azure), `max_tokens` (Anthropic
+default), `proxy`, and `extra_headers`. Use `${ENV_VAR}` in any string to
+interpolate from the environment (keeps secrets out of the file).
+
+**Model naming and routing**
+
+- Every provider's models are exposed together — the **union** — through
+  `/v1/models` and `/api/tags`.
+- With a **single** provider configured, exposed names stay **bare**
+  (`meta/llama-3.1-8b-instruct`) — identical to the pre-v1.3.0 behaviour. The
+  `provider:model` prefix is applied **only when two or more providers coexist**
+  and names need disambiguating (e.g. `nvidia:meta/llama-3.1-8b-instruct`). A
+  model's `alias` always overrides the exposed name, in either case. A `models`
+  entry is either a bare string or a table: `{ id = "llama-3.3-70b", alias = "fast-70b" }`.
+- This makes the **same model served by two providers** unambiguous
+  (`cerebras:llama-3.3-70b` vs. `nvidia:llama-3.3-70b`). Two models resolving to
+  the same exposed name is a start-up error.
+- A request's `model` is matched against the exposed names first, then against
+  bare native ids (so a client sending `meta/llama-3.1-8b-instruct` still works);
+  the request is routed to the owning provider and the native id is sent upstream.
+
+**Backward compatibility**: with no `providers.toml`, a single `nvidia`
+provider is built from the `NVIDIA_*` env vars — existing deployments upgrade with
+zero config.
+
+### What stays in `.env` vs. what goes in `providers.toml`
+
+The two files have **different jobs** and are used together:
+
+- **`.env` — process-global settings and secret _values_.** Everything that is
+  not specific to one provider stays here, plus the actual API-key values (the
+  TOML only *references* them). These apply to the whole proxy regardless of how
+  many providers you run.
+- **`providers.toml` — the upstreams and their per-provider settings.** Which
+  providers exist, their base URLs, which models they serve, and any per-provider
+  overrides.
+
+| Setting | Where | Notes |
+|---------|-------|-------|
+| `HOST`, `PORT` | **.env** | Server bind address. |
+| `LOG_LEVEL`, `LOG_TZ` / `TZ` | **.env** | Logging / clock. |
+| `PROXY_API_KEY` | **.env** | Inbound auth (global). |
+| `CACHE_ENABLED`, `CACHE_TTL`, `CACHE_MAX_SIZE` | **.env** | Response cache (global). |
+| `RETRY_MAX`, `RETRY_BACKOFF` | **.env** | Retry policy (applies to every provider). |
+| `FORCE_UPSTREAM_STREAM` | **.env** | Force-stream re-aggregation (global). |
+| `EMBEDDINGS_INPUT_TYPE` | **.env** | Default embeddings `input_type` (global). |
+| `UPSTREAM_TIMEOUT` | **.env** | **Default** read timeout; a provider's `timeout` overrides it. |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | **.env** | **Default** egress proxy; a provider's `proxy` overrides it. |
+| `UPSTREAM_POOL_SIZE` / `THREADS`, `WEB_CONCURRENCY`, `GUNICORN_TIMEOUT` | **.env** | Pool / gunicorn tuning. |
+| `PROVIDERS_CONFIG` | **.env** | Path to the TOML itself. |
+| **API-key values** (`NVIDIA_API_KEY`, `ANTHROPIC_API_KEY`, …) | **.env** | Referenced from the TOML as `${ENV_VAR}` — never inline the value. |
+| `name`, `type`, `base_url` | **providers.toml** | Provider identity + endpoint. |
+| `api_key` | **providers.toml** | A `${ENV_VAR}` reference, resolved from `.env`. |
+| `models`, `embeddings_models` (+ `alias`) | **providers.toml** | Per-provider model lists / exposed names. |
+| `timeout` | **providers.toml** | Per-provider read timeout (else `UPSTREAM_TIMEOUT`). |
+| `proxy` | **providers.toml** | Per-provider egress proxy (else the global one). |
+| `api_version` | **providers.toml** | Azure only. |
+| `max_tokens` | **providers.toml** | Anthropic default (required by its API). |
+| `extra_headers` | **providers.toml** | Extra headers merged into every request. |
+
+**Rule of thumb:** if the setting answers *"how does the proxy behave overall?"*
+it belongs in `.env`; if it answers *"which upstream, which models, with which
+credentials/limits?"* it belongs in `providers.toml`. **Secrets are the split
+case** — the *value* lives in `.env`, the *reference* (`${…}`) lives in the TOML.
+
+> When `providers.toml` is active, the `NVIDIA_API_BASE` / `NVIDIA_MODEL(S)` /
+> `NVIDIA_EMBEDDINGS_MODEL` vars are **ignored** — those move into the NVIDIA
+> provider block. Only `NVIDIA_API_KEY` stays relevant, as the value behind
+> `api_key = "${NVIDIA_API_KEY}"`.
+
+Minimal split, one provider:
+
+```dotenv
+# .env — globals + the key value
+PORT=11434
+PROXY_API_KEY=change-this
+CACHE_ENABLED=on
+UPSTREAM_TIMEOUT=180
+NVIDIA_API_KEY=nvapi-xxxxxxxx
+PROVIDERS_CONFIG=providers.toml
+```
+
+```toml
+# providers.toml — the upstream + models
+[[provider]]
+name = "nvidia"
+type = "openai_compatible"
+base_url = "https://integrate.api.nvidia.com/v1"
+api_key = "${NVIDIA_API_KEY}"   # value comes from .env
+models = ["meta/llama-3.1-8b-instruct"]
+embeddings_models = ["nvidia/nv-embedqa-e5-v5"]
+timeout = 300                    # this provider only; overrides UPSTREAM_TIMEOUT
+```
+
+### Migrating the env config to `providers.toml`
+
+The `env_to_toml` tool reads your current environment (honouring `.env`) and
+writes a `providers.toml` with the NVIDIA provider filled in and commented stubs
+for every other provider type. Secrets are emitted as `${ENV_VAR}` references, so
+the file stays safe to commit.
+
+**Locally:**
+
+```bash
+make migrate-config                       # writes ./providers.toml
+# equivalently:
+python -m llmproxy.scripts.env_to_toml    # ./providers.toml (refuses to overwrite)
+python -m llmproxy.scripts.env_to_toml providers.dev.toml --force   # custom path
+python -m llmproxy.scripts.env_to_toml -  # print to stdout instead of writing a file
+```
+
+**From inside Docker** — the container image ships the tool, so you can generate
+the file straight from the same `.env` the service uses. Writing to stdout avoids
+any host-filesystem permission issues:
+
+```bash
+# Generate ./providers.toml on the host, from the container, using .env:
+docker compose run --rm --no-TTY llmproxy \
+  python -m llmproxy.scripts.env_to_toml - > providers.toml
+# or simply:
+make migrate-config-docker
+```
+
+Then enable it in `docker-compose.yml` (uncomment the `environment` and `volumes`
+blocks, which mount `./providers.toml` at `/config/providers.toml` and set
+`PROVIDERS_CONFIG`) and restart:
+
+```yaml
+    environment:
+      PROVIDERS_CONFIG: /config/providers.toml
+    volumes:
+      - ./providers.toml:/config/providers.toml:ro
+```
+
+```bash
+docker compose up -d
+docker compose exec llmproxy sh -c 'curl -s localhost:$PORT/health'   # providers: N
+```
+
+For a plain `docker run`, bind-mount the file and set the variable:
+
+```bash
+docker run -d -p 11434:11434 --env-file .env \
+  -v "$PWD/providers.toml:/config/providers.toml:ro" \
+  -e PROVIDERS_CONFIG=/config/providers.toml \
+  lordraw/llmproxy:latest
+```
 
 ## Notes and behavior
 

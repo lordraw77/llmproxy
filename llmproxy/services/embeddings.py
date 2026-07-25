@@ -2,16 +2,15 @@
 
 
 class EmbeddingService:
-    """Forwards embeddings payloads to the upstream ``/embeddings`` endpoint."""
+    """Routes embeddings payloads to the provider that owns the requested model."""
 
-    def __init__(self, upstream, registry, input_type, cache=None):
-        self._upstream = upstream
+    def __init__(self, registry, input_type, cache=None):
         self._registry = registry
         self._input_type = input_type
         self._cache = cache
 
     def resolve_model(self, requested):
-        """Resolve the embeddings model for a request."""
+        """Resolve the embeddings model for a request to its exposed name."""
         return self._registry.resolve_embeddings(requested)
 
     def with_input_type(self, payload):
@@ -21,29 +20,39 @@ class EmbeddingService:
         return payload
 
     def embed(self, payload, rid):
-        """POST ``payload`` to the upstream ``/embeddings`` endpoint and return the response.
+        """Route ``payload`` to its provider's ``/embeddings`` endpoint and return the response.
 
-        Embeddings are deterministic, so identical payloads are served from the
-        response cache when it is enabled (see :mod:`llmproxy.cache`), skipping the
-        upstream call entirely.
+        The payload carries the exposed model name; it is cached on that name and
+        rewritten to the provider-native id before the upstream call. Embeddings are
+        deterministic, so identical payloads are served from the response cache when
+        enabled (see :mod:`llmproxy.cache`).
         """
+        provider, native_id = self._registry.embeddings_provider_for(payload["model"])
         cache = self._cache
+
         if cache is None or not cache.enabled:
-            return self._upstream.post(payload, stream=False, rid=rid, path="/embeddings")
+            return provider.post(self._with_native(payload, native_id), stream=False, rid=rid, path="/embeddings")
 
         from ..cache import CachedResponse
-        from ..upstream.client import resp_json
+        from ..providers.base import resp_json
 
         key = cache.make_key("embeddings", payload)
         hit = cache.get(key)
         if hit is not None:
-            self._upstream.log_cache_hit(rid, key)
+            provider.log_cache_hit(rid, key)
             return CachedResponse(hit)
 
-        resp = self._upstream.post(payload, stream=False, rid=rid, path="/embeddings")
+        resp = provider.post(self._with_native(payload, native_id), stream=False, rid=rid, path="/embeddings")
         if getattr(resp, "ok", False):
             try:
                 cache.set(key, resp_json(resp))
             except ValueError:
                 pass
         return resp
+
+    @staticmethod
+    def _with_native(payload, native_id):
+        """Return a copy of ``payload`` with the model set to the provider-native id."""
+        out = dict(payload)
+        out["model"] = native_id
+        return out

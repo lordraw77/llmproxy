@@ -114,6 +114,15 @@ buildx-release: guard-tag ## Build + push multi-arch ($(PLATFORMS)) in un unico 
 		-t $(IMAGE_VERSION) $(LATEST_TAG_ARG) --push .
 	@echo "Release multi-arch $(IMAGE_VERSION) completata."
 
+.PHONY: migrate-config
+migrate-config: ## Genera providers.toml dalle NVIDIA_* correnti (usa .env); OUT= per il path, FORCE=1 per sovrascrivere
+	python -m llmproxy.scripts.env_to_toml $(OUT) $(if $(FORCE),--force,)
+
+.PHONY: migrate-config-docker
+migrate-config-docker: ## Come sopra ma dentro il container (usa .env), scrive ./providers.toml sull'host
+	docker compose run --rm --no-TTY llmproxy python -m llmproxy.scripts.env_to_toml - > providers.toml
+	@echo "Scritto ./providers.toml; abilita il volume/PROVIDERS_CONFIG in docker-compose.yml e riavvia."
+
 .PHONY: run
 run: ## Avvia l'immagine :VERSION in locale (usa .env, porta 11434)
 	docker run --rm -it --env-file .env -p 11434:11434 $(IMAGE_VERSION)

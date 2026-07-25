@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-24
+
+### Added
+
+- **Multi-provider support** (`llmproxy/providers/`). The single hard-coded NVIDIA
+  upstream is replaced by a `Provider` abstraction; several upstreams are now
+  served at once, each owning its own set of models.
+  - **Provider types**: `openai_compatible` (NVIDIA, OpenAI, Mistral, vLLM, Groq,
+    OpenRouter, LM Studio, local Ollama/llama.cpp), `azure` (deployment-scoped
+    URLs + `api-version`), `anthropic` (native Messages API translation), and
+    `gemini` (native `generateContent` translation). Native providers translate
+    their request/response/streaming formats to and from the OpenAI shape, so the
+    whole client-facing API is unchanged.
+  - **Declarative configuration** via `providers.toml` (path overridable with
+    `PROVIDERS_CONFIG`), with `${ENV_VAR}` interpolation for secrets and optional
+    per-provider proxy/timeout/`api_version`/`max_tokens`. When no file is present,
+    a single provider is synthesized from the existing `NVIDIA_*` env vars, so
+    upgrades are zero-config.
+  - **Model → provider routing**. All providers' models are exposed together
+    (their **union**). With a single provider the exposed names stay **bare**
+    (unchanged from before); with two or more providers they are prefixed as
+    `provider:model` (colon separator, leaving the `/` in model ids intact) to
+    disambiguate. A per-model `alias` overrides the exposed name in either case.
+    Clients may still send the bare native model id. A start-up error is raised on
+    an exposed-name collision.
+  - **Migration tool**: `make migrate-config` (a.k.a.
+    `python -m llmproxy.scripts.env_to_toml`) writes a `providers.toml` from the
+    current environment, with commented stubs for the other provider types.
+  - `/health?upstream=1` now reports a per-provider `upstreams` status map;
+    `/stats` shows the provider count.
+
 ## [1.2.0] - 2026-07-24
 
 ### Added

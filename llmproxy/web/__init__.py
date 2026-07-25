@@ -10,12 +10,11 @@ from flask import Flask
 
 from ..cache import ResponseCache
 from ..config import load_settings
-from ..domain.models import ModelRegistry
 from ..logging_setup import configure_logging
 from ..metrics import MetricsCollector
+from ..providers import build_providers
 from ..services.completions import CompletionService
 from ..services.embeddings import EmbeddingService
-from ..upstream.client import NvidiaUpstream
 from .container import Container
 from .errors import register_error_handlers
 from .middleware import register_middleware
@@ -27,20 +26,19 @@ def create_app(settings=None):
     settings = settings or load_settings()
     logger = configure_logging(settings)
 
-    registry = ModelRegistry.from_settings(settings)
     metrics = MetricsCollector()
     cache = ResponseCache(
         enabled=settings.cache_enabled,
         ttl=settings.cache_ttl,
         max_size=settings.cache_max_size,
     )
-    upstream = NvidiaUpstream(settings, logger, metrics)
-    completions = CompletionService(upstream, settings.default_model, cache=cache)
-    embeddings = EmbeddingService(upstream, registry, settings.embeddings_input_type, cache=cache)
+    registry = build_providers(settings, logger, metrics)
+    completions = CompletionService(registry, cache=cache)
+    embeddings = EmbeddingService(registry, settings.embeddings_input_type, cache=cache)
 
     app = Flask(__name__)
     Container(
-        settings, logger, registry, upstream, completions, embeddings, metrics, cache
+        settings, logger, registry, completions, embeddings, metrics, cache
     ).attach(app)
 
     register_middleware(app)

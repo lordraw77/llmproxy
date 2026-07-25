@@ -14,16 +14,45 @@
 popular local LLM runtimes ([Ollama](https://ollama.com), the
 [OpenAI](https://platform.openai.com) `/v1` API, and
 [llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server`) and
-transparently **forwards every request to NVIDIA's OpenAI-compatible API**
-(`https://integrate.api.nvidia.com/v1`).
+transparently forwards every request to one or more **upstream providers** —
+NVIDIA and any other OpenAI-compatible endpoint (OpenAI, Mistral, vLLM, Groq,
+OpenRouter, LM Studio, local Ollama/llama.cpp), **Azure OpenAI**, **Anthropic**,
+and **Google Gemini** (the last two translated natively to/from the OpenAI shape).
 
-This lets any tool that already speaks Ollama, OpenAI, or llama.cpp talk to a
-NVIDIA-hosted model **without any client-side changes** — you simply point the
+This lets any tool that already speaks Ollama, OpenAI, or llama.cpp talk to any
+configured model **without any client-side changes** — you simply point the
 client at llmproxy instead of at a real local runtime. It covers chat,
 completions, and **embeddings**, supports streaming, multi-model discovery,
 optional inbound authentication, automatic retries on transient upstream errors,
 an optional **response cache** (configurable TTL & size) for non-streaming
 replies, and a live **`/stats`** metrics & process dashboard.
+
+### Providers
+
+Providers are declared in a `providers.toml` file (path via `PROVIDERS_CONFIG`).
+Every provider's models are exposed together — the union. With a single provider
+the model names stay **bare** (unchanged); with two or more they are prefixed as
+`provider:model` to disambiguate (a per-model `alias` overrides that, and separates
+the same model offered by two providers). When no `providers.toml` is present, a
+single provider is synthesized from the `NVIDIA_*` env vars, so existing setups
+keep working with **zero config** — and with identical model names. Generate a
+starting file from your current environment with `make migrate-config`. See
+[Configuration](docs/configuration.md) and the [Migration guide](docs/migration.md).
+
+```toml
+[[provider]]
+name = "nvidia"
+type = "openai_compatible"
+base_url = "https://integrate.api.nvidia.com/v1"
+api_key = "${NVIDIA_API_KEY}"
+models = ["meta/llama-3.1-8b-instruct"]
+
+[[provider]]
+name = "anthropic"
+type = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+models = ["claude-opus-4-8", "claude-sonnet-5"]
+```
 
 ## Demo
 
@@ -39,11 +68,15 @@ replies, and a live **`/stats`** metrics & process dashboard.
 ```mermaid
 flowchart LR
     client["Your client<br/>(Open WebUI, curl, SDK)"]
-    proxy["llmproxy<br/>(Flask)"]
-    nvidia["NVIDIA API<br/>integrate.api.nvidia.com/v1"]
+    proxy["llmproxy<br/>(Flask · model→provider routing)"]
+    nvidia["NVIDIA / OpenAI-compatible"]
+    anthropic["Anthropic"]
+    gemini["Google Gemini"]
 
     client -->|"Ollama / OpenAI / llama.cpp<br/>HTTP request"| proxy
     proxy -->|"OpenAI request"| nvidia
+    proxy -->|"native Messages API"| anthropic
+    proxy -->|"native generateContent"| gemini
     nvidia -->|"streaming / JSON"| proxy
     proxy -->|"streaming / JSON response"| client
 ```
@@ -55,6 +88,7 @@ flowchart LR
 | [Overview](docs/overview.md) | What llmproxy is, how it works, and its architecture |
 | [Installation](docs/installation.md) | Local and Docker setup instructions |
 | [Configuration](docs/configuration.md) | Environment variables and options |
+| [Migration](docs/migration.md) | Moving from env config to multi-provider `providers.toml` (local & Docker) |
 | [Logging & Telemetry](docs/logging.md) | Request/response logs, telemetry, and the configurable-timezone clock |
 | [API Reference](docs/api-reference.md) | Every endpoint, with request/response examples |
 | [Usage Examples](docs/usage.md) | End-to-end examples with curl and common clients |

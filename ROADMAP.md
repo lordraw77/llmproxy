@@ -3,10 +3,11 @@
 Development direction for **llmproxy**. Dates are indicative; priority is driven
 by items marked as "core". Versioning follows [SemVer](https://semver.org/).
 
-Current state — **v1.2.0**: a proxy to a **single provider** (NVIDIA,
-OpenAI-compatible API) that exposes the Ollama, OpenAI and llama.cpp APIs, with
-embeddings, retry/backoff, inbound auth, an optional response cache and
-in-process metrics. Since v1.1.0 the line has added, without breaking changes:
+Current state — **v1.3.0**: a **multi-provider** proxy that exposes the Ollama,
+OpenAI and llama.cpp APIs over several upstreams at once (OpenAI-compatible,
+Azure, Anthropic and Gemini), with model→provider routing, embeddings,
+retry/backoff, inbound auth, an optional response cache and in-process metrics.
+Since v1.1.0 the line has added, without breaking changes:
 
 - **v1.1.1** — `FORCE_UPSTREAM_STREAM`: always stream towards the upstream and
   transparently re-aggregate into a non-streaming reply, avoiding read timeouts
@@ -21,24 +22,31 @@ in-process metrics. Since v1.1.0 the line has added, without breaking changes:
 - **v1.2.0** — **response caching** (`CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`):
   identical non-streaming completions and embeddings are served from a per-worker
   in-memory TTL + LRU cache, with hit/miss/eviction stats exposed at `/stats`.
+- **v1.3.0** — **multi-provider**: a `Provider` abstraction with
+  OpenAI-compatible/Azure/Anthropic/Gemini implementations, declarative
+  `providers.toml` (env fallback + `make migrate-config`), and model→provider
+  routing exposing every provider's models (`provider:model`, optional aliases).
 
 ---
 
-## v1.3.0 — Multi-provider (core)
+## v1.3.0 — Multi-provider (core) — shipped
 
 Goal: remove the coupling to the single NVIDIA upstream and introduce a provider
 abstraction.
 
-- [ ] Abstract `Provider` interface; `NvidiaUpstream` becomes one implementation.
-- [ ] Additional providers: **OpenAI**, **Anthropic**, **Azure OpenAI**,
+- [x] Abstract `Provider` interface; the NVIDIA upstream becomes one
+      `OpenAICompatibleProvider` implementation.
+- [x] Additional providers: **OpenAI**, **Anthropic**, **Azure OpenAI**,
       **Google (Gemini)**, **Mistral**, **local Ollama/llama.cpp**, generic
       **OpenAI-compatible** endpoints (vLLM, LM Studio, Groq, OpenRouter…).
-- [ ] Declarative multi-provider configuration (YAML/TOML in addition to env vars),
-      with per-provider credentials and base URLs.
-- [ ] **Model → provider** map: the same exposed model name can be served by
-      different providers.
-- [ ] Normalize API differences (parameter names, embeddings formats, streaming
-      formats) behind the abstraction.
+- [x] Declarative multi-provider configuration (`providers.toml`, with env-var
+      interpolation) plus a backward-compatible `NVIDIA_*` env fallback and a
+      `make migrate-config` tool.
+- [x] **Model → provider** map: all providers' models are exposed together (bare
+      names with a single provider, prefixed `provider:model` with 2+, plus
+      optional per-model aliases), each routed to its owning provider.
+- [x] Normalize API differences (parameter names, embeddings formats, streaming
+      formats) behind the abstraction (Anthropic + Gemini native translation).
 
 ## v1.4.0 — Model and provider fail-chain (core)
 

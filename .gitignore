@@ -3,6 +3,10 @@
 *.env
 !.env.example
 
+# Provider config (may hold secrets); keep the example tracked
+providers.toml
+!providers.toml.example
+
 # Python
 __pycache__/
 *.py[cod]
@@ -41,3 +45,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Internal working documents (not part of the published docs)
+docs/roadmap-fix.md
+docs/roadmap-refactor.md

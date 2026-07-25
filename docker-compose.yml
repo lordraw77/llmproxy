@@ -2,9 +2,19 @@
 services:
   llmproxy:
     build: .
+    image: lordraw/llmproxy:latest
     container_name: llmproxy
     restart: unless-stopped
     env_file:
       - .env
     ports:
       - "${PORT:-11434}:${PORT:-11434}"
+    # Multi-provider: mount a providers.toml from the host and point llmproxy at
+    # it. Leave both lines commented to run in single-provider mode from the
+    # NVIDIA_* vars in .env. Generate the file first with:
+    #   docker compose run --rm --no-TTY llmproxy \
+    #     python -m llmproxy.scripts.env_to_toml - > providers.toml
+    #environment:
+    #  PROVIDERS_CONFIG: /config/providers.toml
+    #volumes:
+    #  - ./providers.toml:/config/providers.toml:ro

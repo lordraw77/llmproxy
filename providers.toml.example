@@ -1,0 +1,260 @@
+# providers.toml — declarative multi-provider configuration for llmproxy.
+#
+# Point llmproxy at this file via PROVIDERS_CONFIG (default: providers.toml).
+# When no such file exists, a single provider is synthesized from the NVIDIA_*
+# env vars instead (zero-config, backward compatible). You can generate a filled
+# starting point from your current environment with:
+#
+#     make migrate-config          # -> providers.toml
+#
+# Naming: every provider's models are exposed together (the union). With a single
+# provider the exposed names stay bare (e.g. meta/llama-3.1-8b-instruct); with two
+# or more they become "<provider>:<model>" (the ':' leaves the '/' in ids intact)
+# to disambiguate. A per-model `alias` overrides the exposed name in either case.
+# Clients may also send the bare model id.
+#
+# Secrets: use "${ENV_VAR}" references (expanded from the environment) so this
+# file stays safe to commit.
+#
+# base_url is shown explicitly for every provider below. For the typed providers
+# (openai, mistral, anthropic, gemini) it can be omitted to fall back to the
+# default shown here; for `openai_compatible` and `azure` it is required.
+
+# ── NVIDIA ───────────────────────────────────────────────────────────────────
+[[provider]]
+name = "nvidia"
+type = "openai_compatible"
+base_url = "https://integrate.api.nvidia.com/v1"
+api_key = "${NVIDIA_API_KEY}"
+models = ["meta/llama-3.1-8b-instruct", "meta/llama-3.1-70b-instruct"]
+embeddings_models = ["nvidia/nv-embedqa-e5-v5"]
+
+# ── OpenAI ───────────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "openai"
+# type = "openai"
+# base_url = "https://api.openai.com/v1"
+# api_key = "${OPENAI_API_KEY}"
+# models = ["gpt-4o", "gpt-4o-mini"]
+# embeddings_models = ["text-embedding-3-small"]
+
+# ── Anthropic (Claude) — native Messages API translation ─────────────────────
+# [[provider]]
+# name = "anthropic"
+# type = "anthropic"
+# base_url = "https://api.anthropic.com"
+# api_key = "${ANTHROPIC_API_KEY}"
+# max_tokens = 4096               # Anthropic requires a max_tokens (this is the default)
+# models = ["claude-opus-4-8", "claude-sonnet-5"]
+
+# ── Google Gemini — native generateContent translation ───────────────────────
+# [[provider]]
+# name = "gemini"
+# type = "gemini"
+# base_url = "https://generativelanguage.googleapis.com/v1beta"
+# api_key = "${GEMINI_API_KEY}"
+# models = ["gemini-2.5-pro", "gemini-2.5-flash"]
+
+# ── Azure OpenAI — model id == deployment name ───────────────────────────────
+# [[provider]]
+# name = "azure"
+# type = "azure"
+# base_url = "https://YOUR-RESOURCE.openai.azure.com"
+# api_key = "${AZURE_OPENAI_API_KEY}"
+# api_version = "2024-02-01"
+# models = ["gpt-4o"]
+
+# ── Mistral ──────────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "mistral"
+# type = "mistral"
+# base_url = "https://api.mistral.ai/v1"
+# api_key = "${MISTRAL_API_KEY}"
+# models = ["mistral-large-latest", "mistral-small-latest"]
+
+# ── Groq ─────────────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "groq"
+# type = "openai_compatible"
+# base_url = "https://api.groq.com/openai/v1"
+# api_key = "${GROQ_API_KEY}"
+# models = ["llama-3.3-70b-versatile"]
+
+# ── OpenRouter ───────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "openrouter"
+# type = "openai_compatible"
+# base_url = "https://openrouter.ai/api/v1"
+# api_key = "${OPENROUTER_API_KEY}"
+# models = ["anthropic/claude-3.5-sonnet", "google/gemini-2.5-pro"]
+
+# ── Cerebras ─────────────────────────────────────────────────────────────────
+# The alias keeps this apart from the same model served by NVIDIA above
+# (nvidia:llama-3.3-70b vs. "fast-70b").
+# [[provider]]
+# name = "cerebras"
+# type = "openai_compatible"
+# base_url = "https://api.cerebras.ai/v1"
+# api_key = "${CEREBRAS_API_KEY}"
+# models = [{ id = "llama-3.3-70b", alias = "fast-70b" }]
+
+# ── Together AI ──────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "together"
+# type = "openai_compatible"
+# base_url = "https://api.together.xyz/v1"
+# api_key = "${TOGETHER_API_KEY}"
+# models = ["meta-llama/Llama-3.3-70B-Instruct-Turbo"]
+
+# ── Fireworks AI ─────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "fireworks"
+# type = "openai_compatible"
+# base_url = "https://api.fireworks.ai/inference/v1"
+# api_key = "${FIREWORKS_API_KEY}"
+# models = ["accounts/fireworks/models/llama-v3p3-70b-instruct"]
+
+# ── DeepSeek ─────────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "deepseek"
+# type = "openai_compatible"
+# base_url = "https://api.deepseek.com/v1"
+# api_key = "${DEEPSEEK_API_KEY}"
+# models = ["deepseek-chat", "deepseek-reasoner"]
+
+# ── xAI (Grok) ───────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "xai"
+# type = "openai_compatible"
+# base_url = "https://api.x.ai/v1"
+# api_key = "${XAI_API_KEY}"
+# models = ["grok-4"]
+
+# ── Perplexity ───────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "perplexity"
+# type = "openai_compatible"
+# base_url = "https://api.perplexity.ai"
+# api_key = "${PERPLEXITY_API_KEY}"
+# models = ["sonar", "sonar-pro"]
+
+# ── Cloudflare Workers AI ────────────────────────────────────────────────────
+# OpenAI-compatible endpoint, scoped on your account id (the ${...} ref is
+# expanded inside base_url too, so account id + token stay in .env).
+# [[provider]]
+# name = "cloudflare"
+# type = "openai_compatible"
+# base_url = "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/v1"
+# api_key = "${CLOUDFLARE_API_TOKEN}"
+# models = ["@cf/meta/llama-3.1-8b-instruct", "@cf/mistralai/mistral-7b-instruct-v0.1"]
+# embeddings_models = ["@cf/baai/bge-base-en-v1.5"]
+
+# ── More OpenAI-compatible providers ─────────────────────────────────────────
+# All of the following speak the OpenAI API, so they use type "openai_compatible"
+# and Bearer auth. Base URLs and model ids change over time and can be region- or
+# account-specific — confirm them against each provider's current docs.
+
+# [[provider]]
+# name = "cohere"
+# type = "openai_compatible"
+# base_url = "https://api.cohere.ai/compatibility/v1"
+# api_key = "${COHERE_API_KEY}"
+# models = ["command-a-03-2025", "command-r-plus"]
+# embeddings_models = ["embed-v4.0"]
+
+# [[provider]]
+# name = "ai21"
+# type = "openai_compatible"
+# base_url = "https://api.ai21.com/studio/v1"
+# api_key = "${AI21_API_KEY}"
+# models = ["jamba-large-1.7", "jamba-mini-1.7"]
+
+# [[provider]]
+# name = "deepinfra"
+# type = "openai_compatible"
+# base_url = "https://api.deepinfra.com/v1/openai"
+# api_key = "${DEEPINFRA_API_KEY}"
+# models = ["meta-llama/Meta-Llama-3.1-70B-Instruct"]
+
+# [[provider]]
+# name = "siliconflow"
+# type = "openai_compatible"
+# base_url = "https://api.siliconflow.com/v1"    # or https://api.siliconflow.cn/v1
+# api_key = "${SILICONFLOW_API_KEY}"
+# models = ["deepseek-ai/DeepSeek-V3"]
+
+# [[provider]]
+# name = "sambanova"
+# type = "openai_compatible"
+# base_url = "https://api.sambanova.ai/v1"
+# api_key = "${SAMBANOVA_API_KEY}"
+# models = ["Meta-Llama-3.3-70B-Instruct"]
+
+# [[provider]]
+# name = "nebius"
+# type = "openai_compatible"
+# base_url = "https://api.studio.nebius.com/v1"
+# api_key = "${NEBIUS_API_KEY}"
+# models = ["meta-llama/Llama-3.3-70B-Instruct"]
+
+# [[provider]]
+# name = "novita"
+# type = "openai_compatible"
+# base_url = "https://api.novita.ai/v3/openai"
+# api_key = "${NOVITA_API_KEY}"
+# models = ["meta-llama/llama-3.3-70b-instruct"]
+
+# [[provider]]
+# name = "kluster"
+# type = "openai_compatible"
+# base_url = "https://api.kluster.ai/v1"
+# api_key = "${KLUSTER_API_KEY}"
+# models = ["klusterai/Meta-Llama-3.3-70B-Instruct-Turbo"]
+
+# GitHub Models — auth is a GitHub PAT with the models scope.
+# [[provider]]
+# name = "github"
+# type = "openai_compatible"
+# base_url = "https://models.github.ai/inference"
+# api_key = "${GITHUB_TOKEN}"
+# models = ["openai/gpt-4o", "meta/Llama-3.3-70B-Instruct"]
+
+# Hugging Face — OpenAI-compatible inference router (auth: HF token).
+# [[provider]]
+# name = "huggingface"
+# type = "openai_compatible"
+# base_url = "https://router.huggingface.co/v1"
+# api_key = "${HF_TOKEN}"
+# models = ["meta-llama/Llama-3.3-70B-Instruct"]
+
+# OVHcloud AI Endpoints — base URL is model/region specific; check your dashboard.
+# [[provider]]
+# name = "ovhcloud"
+# type = "openai_compatible"
+# base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+# api_key = "${OVH_AI_ENDPOINTS_TOKEN}"
+# models = ["Meta-Llama-3_3-70B-Instruct"]
+
+# ── Local: vLLM ──────────────────────────────────────────────────────────────
+# [[provider]]
+# name = "vllm"
+# type = "openai_compatible"
+# base_url = "http://localhost:8000/v1"
+# api_key = "not-needed"          # vLLM ignores it unless started with --api-key
+# models = ["meta-llama/Llama-3.1-8B-Instruct"]
+
+# ── Local: LM Studio ─────────────────────────────────────────────────────────
+# [[provider]]
+# name = "lmstudio"
+# type = "openai_compatible"
+# base_url = "http://localhost:1234/v1"
+# api_key = "lm-studio"
+# models = ["llama-3.2-3b-instruct"]
+
+# ── Local: Ollama (OpenAI-compatible endpoint) ───────────────────────────────
+# [[provider]]
+# name = "ollama"
+# type = "openai_compatible"
+# base_url = "http://localhost:11434/v1"
+# api_key = "ollama"              # any non-empty string; Ollama ignores it
+# models = ["llama3.2", "qwen2.5"]

@@ -38,6 +38,8 @@ Thumbs.db
 
 # Docs / misc
 *.md
+docs/roadmap-fix.md
+docs/roadmap-refactor.md
 .claude/
 *.log
 graphify-out/

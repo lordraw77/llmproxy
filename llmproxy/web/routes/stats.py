@@ -30,6 +30,7 @@ def _payload():
             "exposed": list(container.registry.models),
             "default": container.registry.default_model,
             "embeddings": container.registry.embeddings_model,
+            "providers": [p.name for p in container.registry.providers],
         },
     }
 
@@ -174,7 +175,7 @@ def _render(payload):
   </div>
 
   <div class="card">
-    <h2>Upstream (NVIDIA)</h2>
+    <h2>Upstream</h2>
     <div class="kpis">
       <div class="kpi"><span class="big">{up['calls']}</span><small>calls</small></div>
       <div class="kpi"><span class="big">{up['errors']}</span><small>errors</small></div>
@@ -210,6 +211,7 @@ def _render(payload):
   <div class="card">
     <h2>Models</h2>
     <table>
+      <tr><td class="k">providers</td><td class="v">{len(md.get('providers', []))}</td></tr>
       <tr><td class="k">default</td><td class="v">{md['default']}</td></tr>
       <tr><td class="k">embeddings</td><td class="v">{md['embeddings']}</td></tr>
       <tr><td class="k">exposed</td><td class="v">{len(md['exposed'])}</td></tr>
