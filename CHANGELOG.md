@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`NVIDIA_API_KEY` guard on every inference route.** The `require_upstream_key`
+  decorator returned `500` whenever `NVIDIA_API_KEY` was empty — meaningless under
+  multi-provider configuration, where a request may target a provider that needs no
+  key at all (local Ollama, vLLM, LM Studio) or one whose credential lives in
+  `providers.toml`. The decorator is gone; missing credentials are now reported
+  **once per provider at start-up** as a warning, and a genuinely unauthenticated
+  call surfaces as the upstream's own `401`, propagated verbatim.
 - **Stored XSS and unbounded metric cardinality on `/stats`.** Per-path counters
   recorded the raw `request.path`, an attacker-controlled and unbounded value that
   was then interpolated into the dashboard HTML without escaping. Requests are now

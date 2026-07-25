@@ -10,10 +10,10 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 > models; otherwise it falls back to the default (the first entry). See
 > [Configuration → Multi-model support](configuration.md#multi-model-support).
 
-> **Auth note:** endpoints that call the upstream API return
-> `500 {"error": "NVIDIA_API_KEY non configurata nel file .env"}` when
-> `NVIDIA_API_KEY` is unset. When the upstream provider returns an error, that
-> error is **propagated to the client**: the provider's HTTP status code is
+> **Auth note:** a provider configured without a credential is reported as a
+> warning at startup, not as a request-time error — the call is attempted and the
+> upstream's own `401` reaches the client. When the upstream provider returns an
+> error, that error is **propagated to the client**: the provider's HTTP status code is
 > preserved and its JSON error body is forwarded verbatim (see
 > [Error responses](#error-responses) below).
 
@@ -517,7 +517,7 @@ passed through unchanged.
 | Situation | Status | Body |
 |-----------|--------|------|
 | Missing/invalid inbound key (when `PROXY_API_KEY` is set) | `401` | `{"error": {"message": "unauthorized", "type": "authentication_error"}}` |
-| `NVIDIA_API_KEY` not set | `500` | `{"error": "NVIDIA_API_KEY non configurata nel file .env"}` |
+| Provider credential not set | **upstream status** (usually `401`) | The provider's own JSON error body, forwarded verbatim |
 | Upstream provider returned an error | **upstream status** | The provider's JSON error body, **forwarded verbatim** |
 | Upstream returned a non-JSON error | upstream status | `{"error": {"message": "<raw text>", "type": "upstream_error", "code": <status>}}` |
 | No response from upstream (timeout, DNS, connection refused) | `502` | `{"error": {"message": "<reason>", "type": "upstream_request_error"}}` |

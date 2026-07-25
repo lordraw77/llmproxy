@@ -29,8 +29,8 @@ def main():
     """Run the built-in development server (production uses gunicorn ``main:app``)."""
     print(render_banner(__version__), flush=True)
     logger = configure_logging(_settings)
-    if not _settings.nvidia_api_key:
-        logger.warning("NVIDIA_API_KEY non impostata in .env: le chiamate falliranno.")
+    # Missing provider credentials are reported per-provider at start-up by
+    # llmproxy.providers.factory.build_providers.
     logger.info("llmproxy in ascolto su http://%s:%s", _settings.host, _settings.port)
     logger.info("Modelli esposti: %s", ", ".join(_settings.models))
     logger.info(

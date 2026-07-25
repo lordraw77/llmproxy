@@ -9,7 +9,7 @@ from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage, require_upstream_key
+from ..formatting import log_stream_usage
 
 bp = Blueprint("llamacpp", __name__)
 
@@ -27,7 +27,6 @@ def props():
 
 
 @bp.route("/completion", methods=["POST"])
-@require_upstream_key
 def llama_completion():
     """llama.cpp-native ``/completion`` (llama-server): SSE (stream) or JSON reply."""
     container = deps()

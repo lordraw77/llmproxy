@@ -1,16 +1,11 @@
 """Presentation helpers shared by the route adapters.
 
-Timestamp formatting, upstream-key guarding, streaming-usage logging, and the
-small OpenAI ``/v1/models`` entry builder. These are interface-layer concerns:
-they shape data for a particular client dialect.
+Timestamp formatting, streaming-usage logging, and the small OpenAI
+``/v1/models`` entry builder. These are interface-layer concerns: they shape data
+for a particular client dialect.
 """
 
 from datetime import datetime, timezone
-from functools import wraps
-
-from flask import jsonify
-
-from .container import deps
 
 
 def now_iso():
@@ -36,13 +31,3 @@ def log_stream_usage(logger, metrics, rid, usage):
             rid, usage.get("prompt_tokens"), usage.get("completion_tokens"),
             usage.get("total_tokens"),
         )
-
-
-def require_upstream_key(view):
-    """Reject the request with the historical 500 error when NVIDIA_API_KEY is unset."""
-    @wraps(view)
-    def wrapper(*args, **kwargs):
-        if not deps().settings.nvidia_api_key:
-            return jsonify({"error": "NVIDIA_API_KEY non configurata nel file .env"}), 500
-        return view(*args, **kwargs)
-    return wrapper

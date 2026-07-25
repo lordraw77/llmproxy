@@ -1,14 +1,20 @@
 # Troubleshooting
 
-## `{"error": "NVIDIA_API_KEY non configurata nel file .env"}` (HTTP 500)
+## `Provider senza credenziale configurata: <name>` (startup warning)
 
-The `NVIDIA_API_KEY` environment variable is empty. llmproxy returns this on
-every inference endpoint when the key is missing.
+A configured provider has no API credential. llmproxy logs this once per
+provider at startup and keeps serving: a local upstream (Ollama, vLLM, LM Studio)
+legitimately needs no key. If the provider *does* require one, its calls fail with
+the upstream's own `401`, which is propagated to the client.
 
 **Fix:**
 
-1. Set `NVIDIA_API_KEY` in `.env`.
-2. Restart the service (`docker compose restart` or re-run `python main.py`) —
+1. Set the provider's key — `NVIDIA_API_KEY` in `.env` for the env-var
+   configuration, or the `api_key` field of the `[[provider]]` block in
+   `providers.toml`.
+2. If `api_key` uses a `${VAR}` reference, check that `VAR` is actually exported:
+   an unresolved reference expands to an empty string silently.
+3. Restart the service (`docker compose restart` or re-run `python main.py`) —
    configuration is only read at startup.
 
 ## The client receives a provider error (401, 403, 404, 429, …)

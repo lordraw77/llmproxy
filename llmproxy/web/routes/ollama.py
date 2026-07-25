@@ -10,7 +10,7 @@ from flask import Blueprint, Response, g, jsonify, request
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage, now_iso, require_upstream_key
+from ..formatting import log_stream_usage, now_iso
 
 bp = Blueprint("ollama", __name__)
 
@@ -67,7 +67,6 @@ def show():
 
 
 @bp.route("/api/chat", methods=["POST"])
-@require_upstream_key
 def chat():
     """Ollama ``/api/chat``: forward a chat request and return NDJSON (stream) or JSON."""
     container = deps()
@@ -128,7 +127,6 @@ def chat():
 
 
 @bp.route("/api/generate", methods=["POST"])
-@require_upstream_key
 def generate_endpoint():
     """Ollama ``/api/generate``: prompt (+optional system) completion, NDJSON (stream) or JSON."""
     container = deps()
@@ -193,7 +191,6 @@ def generate_endpoint():
 
 
 @bp.route("/api/embeddings", methods=["POST"])
-@require_upstream_key
 def api_embeddings():
     """Ollama-style embeddings (legacy): ``{"model", "prompt"}`` -> ``{"embedding": [...]}``."""
     container = deps()
@@ -209,7 +206,6 @@ def api_embeddings():
 
 
 @bp.route("/api/embed", methods=["POST"])
-@require_upstream_key
 def api_embed():
     """Ollama-style embeddings (new): ``{"model", "input"}`` -> ``{"embeddings": [[...]]}``."""
     container = deps()

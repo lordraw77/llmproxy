@@ -9,7 +9,7 @@ from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
 from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import log_stream_usage, model_entry, require_upstream_key
+from ..formatting import log_stream_usage, model_entry
 
 bp = Blueprint("openai", __name__)
 
@@ -44,7 +44,6 @@ def v1_model(model_id):
 
 @bp.route("/v1/chat/completions", methods=["POST"])
 @bp.route("/chat/completions", methods=["POST"])
-@require_upstream_key
 def v1_chat_completions():
     """OpenAI ``/v1/chat/completions``: passthrough chat, raw SSE relay when streaming.
 
@@ -74,7 +73,6 @@ def v1_chat_completions():
 
 @bp.route("/v1/embeddings", methods=["POST"])
 @bp.route("/embeddings", methods=["POST"])
-@require_upstream_key
 def v1_embeddings():
     """OpenAI ``/v1/embeddings``: passthrough to the upstream ``/embeddings`` endpoint."""
     container = deps()
@@ -91,7 +89,6 @@ def v1_embeddings():
 
 @bp.route("/v1/completions", methods=["POST"])
 @bp.route("/completions", methods=["POST"])
-@require_upstream_key
 def v1_completions():
     """OpenAI ``/v1/completions``: text completion, SSE (stream) or JSON."""
     container = deps()
