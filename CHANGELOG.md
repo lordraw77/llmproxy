@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`500` instead of `401` on a non-ASCII inbound API key.** `hmac.compare_digest`
+  raises `TypeError` when either `str` operand contains non-ASCII characters, so a
+  client sending such a token got an unhandled error (and a traceback in the log)
+  where authentication should simply have failed. Both sides are now compared as
+  UTF-8 bytes, which keeps the comparison constant-time and returns `401`.
 - **`NVIDIA_API_KEY` guard on every inference route.** The `require_upstream_key`
   decorator returned `500` whenever `NVIDIA_API_KEY` was empty — meaningless under
   multi-provider configuration, where a request may target a provider that needs no

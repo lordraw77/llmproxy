@@ -31,8 +31,10 @@ def _check_auth(settings):
     header = request.headers.get("Authorization", "")
     token = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
     token = token or request.headers.get("X-Api-Key", "").strip()
-    # Constant-time comparison: avoids leaking the key via timing.
-    if not hmac.compare_digest(token, settings.proxy_api_key):
+    # Constant-time comparison: avoids leaking the key via timing. Compared as
+    # bytes because ``compare_digest`` rejects non-ASCII str with a TypeError,
+    # which would turn a failed authentication into a 500.
+    if not hmac.compare_digest(token.encode("utf-8"), settings.proxy_api_key.encode("utf-8")):
         return _unauthorized()
     return None
 
