@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Unit test suite** (`tests/`, pytest). Offline and deterministic — no network,
+  no `.env`, no `providers.toml`: `Settings` objects are built by the fixtures
+  rather than through `load_settings()`. Covers `ResponseCache` (TTL, LRU,
+  copy-isolation, counters), `ProviderRegistry` (bare vs. `provider:model` naming,
+  aliases, collisions, bare-id resolution across several owners of one model id),
+  `build_sampling_params`, and the SSE parser (including incremental reassembly of
+  parallel tool calls), plus regression tests for the three fixes below. Run with
+  `make test` / `make test-cov`; dev dependencies live in `requirements-dev.txt`
+  and never enter the runtime image.
+
 ## [1.3.0] - 2026-07-24
 
 ### Added

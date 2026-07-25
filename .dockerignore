@@ -21,6 +21,9 @@ env/
 ENV/
 
 # Testing / caches
+tests/
+pytest.ini
+requirements-dev.txt
 .pytest_cache/
 .coverage
 htmlcov/

@@ -1,13 +1,88 @@
 # Testing
 
-llmproxy ships with a single test runner, [`scripts/tests.sh`](../scripts/tests.sh),
-that exercises every endpoint and every configured model against a running
-instance. It works as a **plain bash menu** with no dependencies, and
-automatically upgrades to a **TUI** when `whiptail`/`dialog` (menu) or `fzf`
-(model picker) are available.
+llmproxy has two independent test layers:
+
+| Layer | What it is | Needs a running server? | Needs an API key? |
+|---|---|---|---|
+| [Unit tests](#unit-tests) (`tests/`, pytest) | Pure logic: cache, registry, sampling, SSE parsing, plus regression tests over the routes with a stubbed upstream | No | No |
+| [Endpoint tests](#endpoint-tests) (`scripts/tests.sh`) | Integration/smoke: every endpoint and every configured model against a live instance | Yes | Yes |
+
+The unit suite is the one to run on every change — it is offline and takes well
+under a second. The endpoint script is what you run before a release, or when
+you need to confirm a real upstream behaves as expected.
+
+---
+
+# Unit tests
+
+Offline, deterministic, no network and no `.env`: `Settings` objects are built
+directly by the test fixtures instead of through `load_settings()`, so the suite
+never picks up your real credentials or `providers.toml`.
+
+## Running them
+
+```bash
+make install-dev        # pip install -r requirements-dev.txt (pytest, pytest-cov)
+make test               # the whole suite
+make test-cov           # with a coverage report over llmproxy/
+make test ARGS="-k registry -v"     # pass any pytest option through
+```
+
+`pytest` alone works too — the configuration lives in
+[`pytest.ini`](../pytest.ini). Test dependencies are in
+[`requirements-dev.txt`](../requirements-dev.txt), deliberately **not** in
+`requirements.txt`: `tests/` is excluded from the Docker build context, so
+nothing here reaches the runtime image.
+
+## What is covered
+
+| File | Target | What it pins |
+|---|---|---|
+| `tests/test_cache.py` | `llmproxy.cache.ResponseCache` | TTL expiry (with a frozen clock), LRU eviction and recency refresh, deep-copy isolation in both directions, key derivation, the counters `/stats` reports |
+| `tests/test_registry.py` | `ProviderRegistry` | Bare names with one provider vs. `provider:model` with two or more, aliases, collision detection, bare-native-id resolution when three providers serve the same model id, embeddings routing |
+| `tests/test_sampling.py` | `build_sampling_params` | OpenAI passthrough, the `num_predict` → `max_tokens` alias, unknown keys dropped, `temperature: 0` preserved |
+| `tests/test_sse.py` | `iter_nvidia_sse` | Delta accumulation, `[DONE]`, malformed chunks skipped, `usage` extraction, incremental reassembly of parallel tool calls |
+| `tests/test_p0_regressions.py` | The three 1.3.0 security/robustness fixes | See below |
+
+### The regression tests
+
+`tests/test_p0_regressions.py` exists so the fixes released in 1.3.0 cannot come
+back. Each was verified to **fail** against the pre-fix code:
+
+- **Metric cardinality + stored XSS** — an arbitrary request path must collapse
+  into the single `<unmatched>` bucket rather than becoming its own metric key,
+  and every dynamic value on `/stats` must come out HTML-escaped.
+- **Missing credential** — no inference route may return the historical
+  `500 NVIDIA_API_KEY non configurata`; a provider with no key is a start-up
+  warning, and an unknown provider `type` must still fail fast.
+- **Non-ASCII inbound key** — a token (or a configured `PROXY_API_KEY`) with
+  non-ASCII characters must produce a `401`, not the `TypeError`-driven `500`.
+
+## Writing a new test
+
+`tests/conftest.py` provides the three building blocks:
+
+- `make_settings(**overrides)` — a `Settings` with safe defaults; override any
+  field by keyword.
+- `make_provider_config(name, models=…, api_key=…)` — a `ProviderConfig` with the
+  auth wrapping the config layer normally applies.
+- the `app_factory` / `client` fixtures — a fully wired Flask app and test client.
+
+To exercise a route without a network, monkeypatch `OpenAICompatibleProvider.post`
+to return an `AggregatedResponse` with a canned OpenAI body — see the
+`offline_upstream` fixture in `tests/test_p0_regressions.py`.
+
+---
+
+# Endpoint tests
+
+[`scripts/tests.sh`](../scripts/tests.sh) exercises every endpoint and every
+configured model against a running instance. It works as a **plain bash menu**
+with no dependencies, and automatically upgrades to a **TUI** when
+`whiptail`/`dialog` (menu) or `fzf` (model picker) are available.
 
 > These are **integration/smoke tests**: they hit a live llmproxy and, through
-> it, the real NVIDIA API. A valid `NVIDIA_API_KEY` must be configured and the
+> it, the real upstream provider. A valid credential must be configured and the
 > server must be running.
 
 ## Prerequisites

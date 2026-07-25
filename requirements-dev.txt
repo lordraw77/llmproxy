@@ -1,0 +1,12 @@
+# Development-only dependencies: the unit test suite under tests/.
+#
+# Deliberately kept out of requirements.txt so the runtime image stays lean —
+# tests/ is excluded from the Docker build context (see .dockerignore).
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   make test
+
+-r requirements.txt
+
+pytest>=8.0
+pytest-cov>=5.0

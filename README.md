@@ -92,7 +92,7 @@ flowchart LR
 | [Logging & Telemetry](docs/logging.md) | Request/response logs, telemetry, and the configurable-timezone clock |
 | [API Reference](docs/api-reference.md) | Every endpoint, with request/response examples |
 | [Usage Examples](docs/usage.md) | End-to-end examples with curl and common clients |
-| [Testing](docs/testing.md) | The `scripts/tests.sh` runner (bash + optional TUI) |
+| [Testing](docs/testing.md) | The offline `pytest` suite (`make test`) and the `scripts/tests.sh` endpoint runner |
 | [Deployment](docs/deployment.md) | Running in production with Docker Compose |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and how to solve them |
 

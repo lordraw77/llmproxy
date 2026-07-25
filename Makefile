@@ -32,6 +32,9 @@ GIT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
 # Piattaforme per le build multi-arch (target buildx-*).
 PLATFORMS ?= linux/amd64
 
+# Interprete usato dai target di test (override: make test PYTHON=python3.12).
+PYTHON    ?= python
+
 # Metadati OCI iniettati come label dell'immagine.
 GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -113,6 +116,18 @@ buildx-release: guard-tag ## Build + push multi-arch ($(PLATFORMS)) in un unico 
 	docker buildx build --platform $(PLATFORMS) $(LABELS) \
 		-t $(IMAGE_VERSION) $(LATEST_TAG_ARG) --push .
 	@echo "Release multi-arch $(IMAGE_VERSION) completata."
+
+.PHONY: test
+test: ## Esegue la suite di unit test (offline, nessuna rete); ARGS= per opzioni pytest
+	$(PYTHON) -m pytest $(ARGS)
+
+.PHONY: test-cov
+test-cov: ## Come `make test` ma con il report di copertura su llmproxy/
+	$(PYTHON) -m pytest --cov=llmproxy --cov-report=term-missing $(ARGS)
+
+.PHONY: install-dev
+install-dev: ## Installa le dipendenze di sviluppo (pytest); non entrano nell'immagine
+	$(PYTHON) -m pip install -r requirements-dev.txt
 
 .PHONY: migrate-config
 migrate-config: ## Genera providers.toml dalle NVIDIA_* correnti (usa .env); OUT= per il path, FORCE=1 per sovrascrivere
