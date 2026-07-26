@@ -236,6 +236,21 @@ models = ["claude-opus-4-8", "claude-sonnet-5"]
 `anthropic` and `gemini` are translated natively to and from the OpenAI shape
 (request, response, and streaming), so clients keep speaking OpenAI/Ollama.
 
+For **`gemini`** the translation covers a full conversation, not just the first
+turn: `tool_calls` on an assistant message become `functionCall` parts, a
+`role="tool"` message becomes the matching `functionResponse` (paired by function
+name, which is what Gemini keys on), block content becomes proper `parts` — text,
+`inlineData` for `data:` image URIs and audio, `fileData` for remote URIs — and
+consecutive same-role turns are merged, since Gemini only knows `user` and
+`model`. Content blocks of a type Gemini has no part for (e.g. `video_url`) are
+dropped rather than stringified. The translation lives in
+`llmproxy/providers/translate/gemini.py`.
+
+> **`anthropic` is not there yet.** Its request-side translation still drops
+> `assistant.tool_calls` and forwards a `role="tool"` message as plain user text,
+> so a tool-calling round-trip against a Claude model does not work. Use an
+> `openai_compatible` provider for tool-calling workloads until that lands.
+
 **Per-provider keys**: `name`, `type`, `base_url`, `api_key`, `models`,
 `embeddings_models`, `timeout`, `api_version` (Azure), `max_tokens` (Anthropic
 default), `proxy`, and `extra_headers`. Use `${ENV_VAR}` in any string to

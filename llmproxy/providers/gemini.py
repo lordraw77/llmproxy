@@ -4,7 +4,9 @@ Translates the OpenAI dialect to/from Gemini's ``generateContent`` API so the re
 of the app stays provider-agnostic:
 
 - **Request**: OpenAI ``messages`` -> Gemini ``contents`` (``system`` -> top-level
-  ``systemInstruction``, ``assistant`` role -> ``model``), sampling params ->
+  ``systemInstruction``, ``assistant`` role -> ``model``, tool calls and results
+  -> ``functionCall`` / ``functionResponse`` parts) in
+  :mod:`llmproxy.providers.translate.gemini`, sampling params ->
   ``generationConfig``, OpenAI ``tools`` -> ``functionDeclarations``.
 - **Response**: Gemini ``candidates`` -> OpenAI ``choices`` (text joined,
   ``functionCall`` -> ``tool_calls``), ``finishReason`` -> ``finish_reason``,
@@ -19,6 +21,7 @@ import json
 import time
 
 from .base import AggregatedResponse, Provider, TranslatedStream, resp_json
+from .translate.gemini import to_contents
 
 # Gemini finishReason -> OpenAI finish_reason.
 _FINISH = {
@@ -27,24 +30,6 @@ _FINISH = {
     "SAFETY": "content_filter",
     "RECITATION": "content_filter",
 }
-
-
-def _to_contents(messages):
-    """Return ``(system_instruction, contents)`` from OpenAI-format messages."""
-    system_parts = []
-    contents = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content", "")
-        text = content if isinstance(content, str) else str(content)
-        if role == "system":
-            if text:
-                system_parts.append(text)
-            continue
-        gem_role = "model" if role == "assistant" else "user"
-        contents.append({"role": gem_role, "parts": [{"text": text}]})
-    system = {"parts": [{"text": "\n\n".join(system_parts)}]} if system_parts else None
-    return system, contents
 
 
 def _generation_config(payload):
@@ -122,7 +107,7 @@ class GeminiProvider(Provider):
         return f"{url}?alt=sse" if stream else url
 
     def _build_body(self, payload, path, stream, aggregate):
-        system, contents = _to_contents(payload.get("messages") or [])
+        system, contents = to_contents(payload.get("messages") or [])
         body = {"contents": contents}
         if system:
             body["systemInstruction"] = system
