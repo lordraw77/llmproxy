@@ -1,0 +1,162 @@
+{#
+  Dashboard for GET /stats — self-contained, no external assets.
+
+  Jinja autoescaping is on for .html templates, so every value interpolated here
+  is escaped by construction. That is the point of the file: the previous
+  f-string renderer had no escaping at all, which is how a request path became a
+  stored XSS (F1). Do not reintroduce `| safe` on anything that comes from
+  metrics, configuration, or a request.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="{{ refresh_seconds }}">
+<title>llmproxy · stats</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif;
+         background: #0f1115; color: #e6e6e6; }
+  @media (prefers-color-scheme: light) { body { background:#f5f6f8; color:#1a1a1a; } }
+  header { padding: 20px 24px; border-bottom: 1px solid #ffffff22; display:flex;
+           align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header .sub { opacity:.6; font-size:13px; }
+  .grid { display:grid; gap:16px; padding:24px;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background:#ffffff08; border:1px solid #ffffff1a; border-radius:12px; padding:16px; }
+  @media (prefers-color-scheme: light) { .card { background:#fff; border-color:#0000001a; } }
+  .card h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase;
+             letter-spacing:.08em; opacity:.6; }
+  .big { font-size:30px; font-weight:600; }
+  .kpis { display:flex; gap:20px; flex-wrap:wrap; }
+  .kpi small { display:block; opacity:.6; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  table { width:100%; border-collapse:collapse; }
+  td { padding:3px 0; border-bottom:1px solid #ffffff10; }
+  td.k { font-family: ui-monospace, monospace; opacity:.85; }
+  td.v { text-align:right; font-variant-numeric: tabular-nums; }
+  .foot { padding:0 24px 28px; opacity:.5; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>llmproxy</h1>
+  <span class="sub">statistics · metrics · process · auto-refresh {{ refresh_seconds }}s</span>
+</header>
+
+<div class="grid">
+  {% macro kpi(value, label) -%}
+  <div class="kpi"><span class="big">{{ value }}</span><small>{{ label }}</small></div>
+  {%- endmacro %}
+
+  {% macro rows(pairs) -%}
+  {% if pairs -%}
+    {% for key, value in pairs -%}
+    <tr><td class="k">{{ key }}</td><td class="v">{{ value }}</td></tr>
+    {%- endfor %}
+  {%- else -%}
+    <tr><td class="k">—</td><td class="v">0</td></tr>
+  {%- endif %}
+  {%- endmacro %}
+
+  <div class="card">
+    <h2>Requests</h2>
+    <div class="kpis">
+      {{ kpi(requests.total, "total") }}
+      {{ kpi(requests.in_flight, "in flight") }}
+      {{ kpi(requests.errors, "errors") }}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Latency (client-side)</h2>
+    <div class="kpis">
+      {{ kpi(latency.avg, "avg ms") }}
+      {{ kpi(latency.max, "max ms") }}
+      {{ kpi(latency.count, "samples") }}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Tokens</h2>
+    <div class="kpis">
+      {{ kpi(tokens.prompt, "prompt") }}
+      {{ kpi(tokens.completion, "completion") }}
+      {{ kpi(tokens.total, "total") }}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Upstream</h2>
+    <div class="kpis">
+      {{ kpi(upstream.calls, "calls") }}
+      {{ kpi(upstream.errors, "errors") }}
+      {{ kpi(upstream.avg_latency_ms, "avg ms") }}
+      {{ kpi(upstream.max_latency_ms, "max ms") }}
+    </div>
+  </div>
+
+  {% if cache %}
+  <div class="card">
+    <h2>Response cache</h2>
+    <div class="kpis">
+      {{ kpi(hit_rate_pct ~ "%", "hit rate") }}
+      {{ kpi(cache.hits, "hits") }}
+      {{ kpi(cache.misses, "misses") }}
+    </div>
+    <table>
+      <tr><td class="k">state</td><td class="v">{{ "enabled" if cache.enabled else "disabled" }}</td></tr>
+      <tr><td class="k">policy</td><td class="v">{{ cache.policy }}</td></tr>
+      <tr><td class="k">entries</td><td class="v">{{ cache.entries }} / {{ cache.max_size }}</td></tr>
+      <tr><td class="k">ttl</td><td class="v">{{ cache.ttl_seconds }}s</td></tr>
+      <tr><td class="k">stores</td><td class="v">{{ cache.stores }}</td></tr>
+      <tr><td class="k">evictions</td><td class="v">{{ cache.evictions }}</td></tr>
+      <tr><td class="k">expirations</td><td class="v">{{ cache.expirations }}</td></tr>
+      <tr><td class="k">skipped (policy)</td><td class="v">{{ cache.skipped }}</td></tr>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Process manager</h2>
+    <table>
+      <tr><td class="k">pid</td><td class="v">{{ process.pid }}</td></tr>
+      <tr><td class="k">server</td><td class="v">{{ process.server }}</td></tr>
+      <tr><td class="k">workers</td><td class="v">{{ process.workers_configured }}</td></tr>
+      <tr><td class="k">threads/worker</td><td class="v">{{ process.threads_per_worker }}</td></tr>
+      <tr><td class="k">worker timeout</td><td class="v">{{ process.worker_timeout_seconds }}s</td></tr>
+      <tr><td class="k">memory rss</td><td class="v">{{ process.memory_rss_mb }} MiB</td></tr>
+      <tr><td class="k">uptime</td><td class="v">{{ uptime }}</td></tr>
+      <tr><td class="k">python</td><td class="v">{{ process.python }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Requests by status</h2>
+    <table>{{ rows(by_status) }}</table>
+  </div>
+
+  <div class="card">
+    <h2>Requests by path</h2>
+    <table>{{ rows(by_path) }}</table>
+  </div>
+
+  <div class="card">
+    <h2>Models</h2>
+    <table>
+      <tr><td class="k">providers</td><td class="v">{{ models.providers | default([], true) | length }}</td></tr>
+      <tr><td class="k">default</td><td class="v">{{ models.default }}</td></tr>
+      <tr><td class="k">embeddings</td><td class="v">{{ models.embeddings }}</td></tr>
+      <tr><td class="k">exposed</td><td class="v">{{ models.exposed | length }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="foot">
+  Metrics are per-worker (this response was served by PID {{ process.pid }}).
+  JSON at <code>/stats.json</code>. Started {{ started_at }}.
+</div>
+</body>
+</html>

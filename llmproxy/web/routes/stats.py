@@ -3,19 +3,25 @@
 - ``GET /stats.json`` — machine-readable metrics + process snapshot (JSON).
 - ``GET /stats``      — a self-contained, auto-refreshing HTML dashboard.
 
-Both respect the optional inbound ``PROXY_API_KEY`` like every other endpoint
-(they are not in the auth-exempt set). Metrics are per-worker: see
+The dashboard is a Jinja template (``web/templates/stats.html``); this module
+only assembles and shapes the data. Jinja's autoescaping is what keeps the page
+safe by construction — the renderer this replaced built the HTML with f-strings
+and escaped nothing, which is how a request path became a stored XSS (``F1``).
+
+Both endpoints respect the optional inbound ``PROXY_API_KEY`` like every other
+endpoint (they are not in the auth-exempt set). Metrics are per-worker: see
 :mod:`llmproxy.metrics`.
 """
 
-from html import escape
-
-from flask import Blueprint, Response, jsonify
+from flask import Blueprint, jsonify, render_template
 
 from ...metrics import process_info
 from ..container import deps
 
 bp = Blueprint("stats", __name__)
+
+#: How often the dashboard reloads itself, in seconds.
+REFRESH_SECONDS = 5
 
 
 def _payload():
@@ -46,23 +52,42 @@ def stats_json():
 @bp.route("/stats", methods=["GET"])
 def stats_dashboard():
     """Render the HTML metrics / process dashboard (auto-refreshing)."""
-    return Response(_render(_payload()), mimetype="text/html; charset=utf-8")
+    return render_template("stats.html", **_template_context(_payload()))
 
 
-# --- HTML rendering (self-contained, no external assets) --------------------
+def _template_context(payload):
+    """Flatten a :func:`_payload` snapshot into the names the template binds.
 
-def _h(value):
-    """Escape ``value`` for interpolation into the dashboard HTML.
-
-    The page is built with f-strings, so every dynamic value has to be escaped at
-    the point of use. Metric keys are route names and configuration comes from
-    ``providers.toml``, but neither is a reason to let markup through: escaping
-    here is what keeps a template-less renderer safe.
+    Ordering and formatting stay here rather than in the template: sorting a
+    mapping and rendering a duration are decisions about the data, and they are
+    testable without going through a renderer.
     """
-    return escape(str(value), quote=True)
+    metrics = payload["metrics"]
+    requests = metrics["requests"]
+    cache = metrics.get("cache")
+    return {
+        "requests": requests,
+        "latency": metrics["latency_ms"],
+        "tokens": metrics["tokens"],
+        "upstream": metrics["upstream"],
+        "cache": cache,
+        "hit_rate_pct": round(cache["hit_rate"] * 100, 1) if cache else None,
+        "process": payload["process"],
+        "models": payload["models"],
+        "by_status": _sorted_pairs(requests["by_status"]),
+        "by_path": _sorted_pairs(requests["by_path"]),
+        "uptime": format_uptime(metrics["uptime_seconds"]),
+        "started_at": metrics["started_at"],
+        "refresh_seconds": REFRESH_SECONDS,
+    }
 
 
-def _fmt_uptime(seconds):
+def _sorted_pairs(mapping):
+    """Return ``mapping`` as ``(key, count)`` pairs, most frequent first."""
+    return sorted((mapping or {}).items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def format_uptime(seconds):
     """Render a duration in seconds as ``NdNhNmNs`` (dropping leading zero units)."""
     seconds = int(seconds)
     days, rem = divmod(seconds, 86400)
@@ -77,168 +102,3 @@ def _fmt_uptime(seconds):
         parts.append(f"{minutes}m")
     parts.append(f"{secs}s")
     return " ".join(parts)
-
-
-def _rows(mapping):
-    """Render a dict as sorted ``<tr>`` label/value rows (most frequent first for counts)."""
-    if not mapping:
-        return '<tr><td class="k">—</td><td class="v">0</td></tr>'
-    items = sorted(mapping.items(), key=lambda kv: (-kv[1], kv[0]))
-    return "".join(
-        f'<tr><td class="k">{_h(k)}</td><td class="v">{_h(v)}</td></tr>' for k, v in items
-    )
-
-
-def _render(payload):
-    """Build the dashboard HTML from a :func:`_payload` snapshot."""
-    m = payload["metrics"]
-    p = payload["process"]
-    md = payload["models"]
-    req = m["requests"]
-    lat = m["latency_ms"]
-    tok = m["tokens"]
-    up = m["upstream"]
-    cache = m.get("cache")
-
-    if cache is not None:
-        state = "enabled" if cache["enabled"] else "disabled"
-        cache_card = f"""
-  <div class="card">
-    <h2>Response cache</h2>
-    <div class="kpis">
-      <div class="kpi"><span class="big">{round(cache['hit_rate'] * 100, 1)}%</span><small>hit rate</small></div>
-      <div class="kpi"><span class="big">{cache['hits']}</span><small>hits</small></div>
-      <div class="kpi"><span class="big">{cache['misses']}</span><small>misses</small></div>
-    </div>
-    <table>
-      <tr><td class="k">state</td><td class="v">{state}</td></tr>
-      <tr><td class="k">policy</td><td class="v">{_h(cache['policy'])}</td></tr>
-      <tr><td class="k">entries</td><td class="v">{cache['entries']} / {cache['max_size']}</td></tr>
-      <tr><td class="k">ttl</td><td class="v">{cache['ttl_seconds']}s</td></tr>
-      <tr><td class="k">stores</td><td class="v">{cache['stores']}</td></tr>
-      <tr><td class="k">evictions</td><td class="v">{cache['evictions']}</td></tr>
-      <tr><td class="k">expirations</td><td class="v">{cache['expirations']}</td></tr>
-      <tr><td class="k">skipped (policy)</td><td class="v">{cache['skipped']}</td></tr>
-    </table>
-  </div>"""
-    else:
-        cache_card = ""
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="5">
-<title>llmproxy · stats</title>
-<style>
-  :root {{ color-scheme: light dark; }}
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; font: 14px/1.5 system-ui, sans-serif;
-         background: #0f1115; color: #e6e6e6; }}
-  @media (prefers-color-scheme: light) {{ body {{ background:#f5f6f8; color:#1a1a1a; }} }}
-  header {{ padding: 20px 24px; border-bottom: 1px solid #ffffff22; display:flex;
-           align-items:baseline; gap:14px; flex-wrap:wrap; }}
-  header h1 {{ margin:0; font-size:18px; }}
-  header .sub {{ opacity:.6; font-size:13px; }}
-  .grid {{ display:grid; gap:16px; padding:24px;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }}
-  .card {{ background:#ffffff08; border:1px solid #ffffff1a; border-radius:12px; padding:16px; }}
-  @media (prefers-color-scheme: light) {{ .card {{ background:#fff; border-color:#0000001a; }} }}
-  .card h2 {{ margin:0 0 12px; font-size:12px; text-transform:uppercase;
-             letter-spacing:.08em; opacity:.6; }}
-  .big {{ font-size:30px; font-weight:600; }}
-  .kpis {{ display:flex; gap:20px; flex-wrap:wrap; }}
-  .kpi small {{ display:block; opacity:.6; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }}
-  table {{ width:100%; border-collapse:collapse; }}
-  td {{ padding:3px 0; border-bottom:1px solid #ffffff10; }}
-  td.k {{ font-family: ui-monospace, monospace; opacity:.85; }}
-  td.v {{ text-align:right; font-variant-numeric: tabular-nums; }}
-  .foot {{ padding:0 24px 28px; opacity:.5; font-size:12px; }}
-</style>
-</head>
-<body>
-<header>
-  <h1>llmproxy</h1>
-  <span class="sub">statistics · metrics · process · auto-refresh 5s</span>
-</header>
-
-<div class="grid">
-  <div class="card">
-    <h2>Requests</h2>
-    <div class="kpis">
-      <div class="kpi"><span class="big">{req['total']}</span><small>total</small></div>
-      <div class="kpi"><span class="big">{req['in_flight']}</span><small>in flight</small></div>
-      <div class="kpi"><span class="big">{req['errors']}</span><small>errors</small></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Latency (client-side)</h2>
-    <div class="kpis">
-      <div class="kpi"><span class="big">{lat['avg']}</span><small>avg ms</small></div>
-      <div class="kpi"><span class="big">{lat['max']}</span><small>max ms</small></div>
-      <div class="kpi"><span class="big">{lat['count']}</span><small>samples</small></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Tokens</h2>
-    <div class="kpis">
-      <div class="kpi"><span class="big">{tok['prompt']}</span><small>prompt</small></div>
-      <div class="kpi"><span class="big">{tok['completion']}</span><small>completion</small></div>
-      <div class="kpi"><span class="big">{tok['total']}</span><small>total</small></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Upstream</h2>
-    <div class="kpis">
-      <div class="kpi"><span class="big">{up['calls']}</span><small>calls</small></div>
-      <div class="kpi"><span class="big">{up['errors']}</span><small>errors</small></div>
-      <div class="kpi"><span class="big">{up['avg_latency_ms']}</span><small>avg ms</small></div>
-      <div class="kpi"><span class="big">{up['max_latency_ms']}</span><small>max ms</small></div>
-    </div>
-  </div>
-{cache_card}
-  <div class="card">
-    <h2>Process manager</h2>
-    <table>
-      <tr><td class="k">pid</td><td class="v">{_h(p['pid'])}</td></tr>
-      <tr><td class="k">server</td><td class="v">{_h(p['server'])}</td></tr>
-      <tr><td class="k">workers</td><td class="v">{_h(p['workers_configured'])}</td></tr>
-      <tr><td class="k">threads/worker</td><td class="v">{_h(p['threads_per_worker'])}</td></tr>
-      <tr><td class="k">worker timeout</td><td class="v">{_h(p['worker_timeout_seconds'])}s</td></tr>
-      <tr><td class="k">memory rss</td><td class="v">{_h(p['memory_rss_mb'])} MiB</td></tr>
-      <tr><td class="k">uptime</td><td class="v">{_fmt_uptime(m['uptime_seconds'])}</td></tr>
-      <tr><td class="k">python</td><td class="v">{_h(p['python'])}</td></tr>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>Requests by status</h2>
-    <table>{_rows(req['by_status'])}</table>
-  </div>
-
-  <div class="card">
-    <h2>Requests by path</h2>
-    <table>{_rows(req['by_path'])}</table>
-  </div>
-
-  <div class="card">
-    <h2>Models</h2>
-    <table>
-      <tr><td class="k">providers</td><td class="v">{len(md.get('providers', []))}</td></tr>
-      <tr><td class="k">default</td><td class="v">{_h(md['default'])}</td></tr>
-      <tr><td class="k">embeddings</td><td class="v">{_h(md['embeddings'])}</td></tr>
-      <tr><td class="k">exposed</td><td class="v">{len(md['exposed'])}</td></tr>
-    </table>
-  </div>
-</div>
-
-<div class="foot">
-  Metrics are per-worker (this response was served by PID {_h(p['pid'])}).
-  JSON at <code>/stats.json</code>. Started {_h(m['started_at'])}.
-</div>
-</body>
-</html>"""
