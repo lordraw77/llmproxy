@@ -179,16 +179,6 @@ class Settings:
     https_proxy: str = ""
     no_proxy: str = ""
 
-    @property
-    def proxies(self):
-        """A ``requests``-style proxies mapping, or ``None`` when none is set."""
-        mapping = {}
-        if self.http_proxy:
-            mapping["http"] = self.http_proxy
-        if self.https_proxy:
-            mapping["https"] = self.https_proxy
-        return mapping or None
-
     # Inbound authentication.
     proxy_api_key: str = ""
     auth_exempt_paths: frozenset = field(default_factory=lambda: frozenset({"/", "/health"}))
@@ -211,6 +201,24 @@ class Settings:
     # Names of ${ENV_VAR} references in providers.toml that had no value. They
     # expanded to the empty string; create_app warns about them at start-up.
     unresolved_env: tuple = ()
+
+    # -- derived values (kept below the fields: a property in the middle of the
+    # list is not an annotation, so @dataclass ignores it and the reader loses
+    # track of what is actually configurable) ------------------------------
+
+    @property
+    def proxies(self):
+        """A ``requests``-style proxies mapping, or ``None`` when none is set.
+
+        Applies to a provider only if its host is not excluded by ``no_proxy``;
+        see :func:`llmproxy.providers.base.bypasses_proxy`.
+        """
+        mapping = {}
+        if self.http_proxy:
+            mapping["http"] = self.http_proxy
+        if self.https_proxy:
+            mapping["https"] = self.https_proxy
+        return mapping or None
 
 
 def _provider_from_dict(d, missing=None):
