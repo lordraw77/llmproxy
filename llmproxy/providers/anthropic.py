@@ -4,8 +4,10 @@ Anthropic does not speak the OpenAI dialect, so this provider translates in both
 directions and hides the difference from the rest of the app:
 
 - **Request**: OpenAI ``messages`` -> Anthropic ``/v1/messages`` (the ``system``
-  message is lifted to the top-level ``system`` field, ``max_tokens`` is required,
-  sampling params and OpenAI ``tools`` are mapped across).
+  message is lifted to the top-level ``system`` field, tool calls and results
+  become ``tool_use`` / ``tool_result`` blocks) in
+  :mod:`llmproxy.providers.translate.anthropic`; ``max_tokens`` is required, and
+  sampling params and OpenAI ``tools`` are mapped across here.
 - **Response**: Anthropic ``content`` blocks -> OpenAI ``choices`` (text joined,
   ``tool_use`` blocks -> ``tool_calls``), ``stop_reason`` -> ``finish_reason``,
   ``usage`` token names remapped.
@@ -19,6 +21,7 @@ import json
 import time
 
 from .base import AggregatedResponse, Provider, TranslatedStream, resp_json
+from .translate.anthropic import split_system
 
 # Anthropic stop_reason -> OpenAI finish_reason.
 _FINISH = {
@@ -27,26 +30,6 @@ _FINISH = {
     "max_tokens": "length",
     "tool_use": "tool_calls",
 }
-
-
-def _split_system(messages):
-    """Return ``(system_text, anthropic_messages)`` from OpenAI-format messages."""
-    system_parts = []
-    out = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content", "")
-        if role == "system":
-            if content:
-                system_parts.append(content if isinstance(content, str) else str(content))
-            continue
-        # Tool results (OpenAI role="tool") map to a user turn carrying a
-        # tool_result block; keep it simple and forward as plain user text.
-        if role == "tool":
-            out.append({"role": "user", "content": str(content)})
-            continue
-        out.append({"role": "assistant" if role == "assistant" else "user", "content": content})
-    return "\n\n".join(system_parts), out
 
 
 def _map_tools(openai_tools):
@@ -96,7 +79,7 @@ class AnthropicProvider(Provider):
         return f"{base}/v1/messages"
 
     def _build_body(self, payload, path, stream, aggregate):
-        system, messages = _split_system(payload.get("messages") or [])
+        system, messages = split_system(payload.get("messages") or [])
         body = {
             "model": payload.get("model"),
             "messages": messages,
