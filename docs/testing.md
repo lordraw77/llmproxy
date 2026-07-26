@@ -42,6 +42,13 @@ nothing here reaches the runtime image.
 | `tests/test_registry.py` | `ProviderRegistry` | Bare names with one provider vs. `provider:model` with two or more, aliases, collision detection, bare-native-id resolution when three providers serve the same model id, embeddings routing |
 | `tests/test_sampling.py` | `build_sampling_params` | OpenAI passthrough, the `num_predict` → `max_tokens` alias, unknown keys dropped, `temperature: 0` preserved |
 | `tests/test_sse.py` | `iter_nvidia_sse` | Delta accumulation, `[DONE]`, malformed chunks skipped, `usage` extraction, incremental reassembly of parallel tool calls |
+| `tests/test_cache_policy.py` | `CACHE_POLICY` eligibility | The four levels, the determinism predicate (`seed`, `temperature`, `top_p`), `skipped` counting, and the end-to-end effect through both services |
+| `tests/test_translate_gemini.py` | `providers/translate/gemini.py` | Block content → parts, `data:`/remote images, the tool round-trip (`functionCall` / `functionResponse` paired by name), role merging, and degradation on malformed input |
+| `tests/test_streaming_close.py` | Every streaming generator | The upstream is closed both after a full stream and on a mid-stream client hang-up, including the `FORCE_UPSTREAM_STREAM` aggregation path |
+| `tests/test_response_shape.py` | `first_message` / `first_content` | A `2xx` reply with no choices, or `content: null` on a tool-calls-only message, degrades instead of raising |
+| `tests/test_routing_errors.py` | The `ValueError` → `400` handler | Unknown models, embeddings asked of a chat-only provider, an empty catalogue — and that the handler does not swallow upstream `JSONDecodeError` |
+| `tests/test_model_name_in_stream.py` | `model` across the streaming routes | The re-framing routes report the exposed name; the `/v1/chat/completions` byte relay reports the native one (a documented limit) |
+| `tests/test_startup_log.py` | `banner.log_startup` | The start-up summary describes the registry, not the `NVIDIA_*` fallback fields |
 | `tests/test_p0_regressions.py` | The three 1.3.0 security/robustness fixes | See below |
 
 ### The regression tests
