@@ -13,9 +13,14 @@ def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def model_entry(name, created):
-    """Build a single OpenAI ``/v1/models`` entry for ``name`` created at ``created``."""
-    return {"id": name, "object": "model", "created": created, "owned_by": "nvidia"}
+def model_entry(name, created, owned_by="llmproxy"):
+    """Build a single OpenAI ``/v1/models`` entry for ``name`` created at ``created``.
+
+    ``owned_by`` comes from :meth:`~llmproxy.providers.registry.ProviderRegistry.owner_of`:
+    it used to be the constant ``"nvidia"``, which announced a Claude or Gemini
+    model as NVIDIA's the moment a second provider was configured.
+    """
+    return {"id": name, "object": "model", "created": created, "owned_by": owned_by}
 
 
 def first_message(data):

@@ -30,6 +30,7 @@ def version():
 @bp.route("/api/tags", methods=["GET"])
 def tags():
     """List the exposed models in Ollama ``/api/tags`` format."""
+    registry = deps().registry
     return jsonify({
         "models": [{
             "name": name,
@@ -37,32 +38,44 @@ def tags():
             "modified_at": now_iso(),
             "size": 0,
             "digest": "llmproxy",
-            "details": {
-                "format": "api",
-                "family": "nvidia",
-                "families": None,
-                "parameter_size": "",
-                "quantization_level": "",
-            },
-        } for name in deps().registry.models]
+            "details": _details(registry.owner_of(name)),
+        } for name in registry.models]
     })
+
+
+def _details(family):
+    """Build the Ollama ``details`` block for a model served by ``family``.
+
+    ``family`` is the provider that actually serves the model — it was the
+    constant ``"nvidia"``, which mislabels every model of every other provider.
+    Ollama clients group and filter on this field.
+    """
+    return {
+        "format": "api",
+        "family": family,
+        "families": None,
+        "parameter_size": "",
+        "quantization_level": "",
+    }
 
 
 @bp.route("/api/show", methods=["POST"])
 def show():
-    """Return placeholder model metadata in Ollama ``/api/show`` format."""
+    """Return placeholder model metadata in Ollama ``/api/show`` format.
+
+    The body names a model; its provider is reported as the ``family``. Ollama
+    itself returns richer metadata, but the proxy has none to give — only the
+    routing is real.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    registry = deps().registry
+    requested = body.get("model") or body.get("name")
     return jsonify({
         "license": "",
         "modelfile": "",
         "parameters": "",
         "template": "",
-        "details": {
-            "format": "api",
-            "family": "nvidia",
-            "families": None,
-            "parameter_size": "",
-            "quantization_level": "",
-        },
+        "details": _details(registry.owner_of(registry.resolve(requested))),
     })
 
 

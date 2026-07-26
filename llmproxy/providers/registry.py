@@ -60,6 +60,20 @@ class ProviderRegistry:
             return self._bare[requested]
         return self.default_model
 
+    def owner_of(self, name):
+        """Return the name of the provider serving ``name``, for model metadata.
+
+        Covers chat and embeddings models alike. Discovery endpoints advertise
+        this as ``owned_by`` (OpenAI) and ``family`` (Ollama); some clients group
+        the model picker by it, so a wrong value is visible, not cosmetic.
+
+        Returns:
+            The provider name, or ``"llmproxy"`` when the model is not exposed —
+            there is no upstream to attribute it to.
+        """
+        entry = self._chat.get(name) or self._embeddings.get(name)
+        return entry.provider.name if entry is not None else "llmproxy"
+
     def provider_for(self, name):
         """Return ``(provider, native_model_id)`` for an exposed chat model name.
 

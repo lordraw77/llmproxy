@@ -23,9 +23,12 @@ def v1_models():
     URL that omits it.
     """
     created = int(time.time())
+    registry = deps().registry
     return jsonify({
         "object": "list",
-        "data": [model_entry(name, created) for name in deps().registry.models],
+        "data": [
+            model_entry(name, created, registry.owner_of(name)) for name in registry.models
+        ],
     })
 
 
@@ -37,9 +40,10 @@ def v1_model(model_id):
     Returns:
         The model entry, or a 404 JSON error if the model is not exposed.
     """
-    if not deps().registry.has(model_id):
+    registry = deps().registry
+    if not registry.has(model_id):
         return jsonify({"error": {"message": f"model '{model_id}' not found", "type": "not_found"}}), 404
-    return jsonify(model_entry(model_id, int(time.time())))
+    return jsonify(model_entry(model_id, int(time.time()), registry.owner_of(model_id)))
 
 
 @bp.route("/v1/chat/completions", methods=["POST"])

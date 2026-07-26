@@ -77,9 +77,15 @@ Ollama is running
 
 ### `GET /api/tags`
 
-Lists every configured model (one entry per `NVIDIA_MODELS` item). The example
-below shows a single model; with a multi-model configuration the `models` array
-has one object per model.
+Lists every exposed model — the union across configured providers. The example
+below shows a single model; with more than one the `models` array has one object
+per model.
+
+`details.family` is the **name of the provider** serving that model (the `name`
+in `providers.toml`), not a fixed string: a Claude model served by a provider
+named `claude` reports `"family": "claude"`. Ollama clients group and filter on
+it. Everything else in `details` is a placeholder — the proxy has no modelfile or
+quantization metadata to report.
 
 **Response:**
 
@@ -106,7 +112,9 @@ has one object per model.
 
 ### `POST /api/show`
 
-Returns placeholder model metadata. The request body is ignored.
+Returns placeholder model metadata for the model named in the body (`model`, or
+`name`). Only `details.family` — the provider that serves it — is real; the proxy
+has no modelfile, license, or parameter metadata to report.
 
 **Response:**
 
@@ -237,7 +245,9 @@ Embeddings in the legacy Ollama format (single vector).
 
 ### `GET /v1/models`
 
-Lists every configured model (one `data` entry per `NVIDIA_MODELS` item).
+Lists every exposed model — the union across configured providers. `owned_by` is
+the **name of the provider** serving each model (the `name` in `providers.toml`),
+so a client can group its model picker by upstream; it is not a fixed string.
 
 **Response:**
 
