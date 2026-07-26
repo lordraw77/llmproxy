@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The response cache no longer replays non-deterministic completions by
+  default.** `CACHE_ENABLED` used to cache *any* successful non-streaming
+  completion, so a request sampled at `temperature > 0` without a `seed` got the
+  same answer for the whole TTL. The new `CACHE_POLICY` picks the eligibility
+  level — `off`, `embeddings`, `deterministic` (default: embeddings plus
+  completions with a `seed`, or `temperature: 0` and `top_p: 1`), or `all` (the
+  previous behaviour). Eligibility is evaluated before the lookup, so tightening
+  the policy applies to entries already stored. Ineligible requests are reported
+  as `skipped` under `metrics.cache`, alongside the active `policy`.
+
 ### Fixed
 
+- **The start-up summary describes the registry, not the environment.** It read
+  `settings.models` / `settings.default_model`, which derive from the `NVIDIA_*`
+  variables: with a `providers.toml` in place the banner listed models that were
+  not exposed and omitted the real catalogue. It now reads the registry attached
+  to the app and also reports the configured providers, the embeddings model and
+  the cache state.
 - **Streaming upstream responses are now always closed.** The SSE parser stops at
   the `[DONE]` marker, so the upstream body was never drained to EOF and none of
   the streaming routes released it: the connection was dropped instead of
@@ -44,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   parallel tool calls), plus regression tests for the three fixes below. Run with
   `make test` / `make test-cov`; dev dependencies live in `requirements-dev.txt`
   and never enter the runtime image.
+
+### Documentation
+
+- **`model` in streaming chunks is a documented limit, not a bug.** Streaming
+  `/v1/chat/completions` is a byte relay, so its SSE chunks carry the
+  provider-native model id while every other streaming endpoint reports the
+  exposed name. Rewriting it would cost a parse and a re-serialization per chunk;
+  `docs/api-reference.md` now states the asymmetry and how to work around it, and
+  tests pin both halves.
 
 ## [1.3.0] - 2026-07-24
 
