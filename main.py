@@ -16,7 +16,7 @@ the development server. ``app`` is exported for ``gunicorn main:app``.
 """
 
 from llmproxy import __version__
-from llmproxy.banner import render_banner
+from llmproxy.banner import log_startup, render_banner
 from llmproxy.config import load_settings
 from llmproxy.logging_setup import configure_logging
 from llmproxy.web import create_app
@@ -31,13 +31,10 @@ def main():
     logger = configure_logging(_settings)
     # Missing provider credentials are reported per-provider at start-up by
     # llmproxy.providers.factory.build_providers.
-    logger.info("llmproxy in ascolto su http://%s:%s", _settings.host, _settings.port)
-    logger.info("Modelli esposti: %s", ", ".join(_settings.models))
-    logger.info(
-        "Default: %s | log level=%s | timezone log=%s",
-        _settings.default_model, _settings.log_level, _settings.log_tz,
-    )
-    logger.info("Autenticazione in ingresso: %s", "ATTIVA" if _settings.proxy_api_key else "disattivata")
+    # The catalogue comes from the registry, not from Settings: with a
+    # providers.toml the NVIDIA_* env vars are not the source of truth and would
+    # advertise models that are not exposed (and omit the ones that are).
+    log_startup(logger, _settings, app.extensions["llmproxy"].registry)
     app.run(host=_settings.host, port=_settings.port, threaded=True)
 
 
