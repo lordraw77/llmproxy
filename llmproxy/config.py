@@ -37,11 +37,26 @@ _PROVIDER_BASE_URLS = {
 _ENV_REF = re.compile(r"\$\{([^}]+)\}")
 
 
-def _interp(value):
-    """Expand ``${ENV_VAR}`` references in a string against the environment."""
+def _interp(value, missing=None):
+    """Expand ``${ENV_VAR}`` references in a string against the environment.
+
+    An unset variable expands to the empty string — a provider with
+    ``api_key = "${TYPO_KEY}"`` starts happily and then fails with a 401 on its
+    first request, a long way from the cause. The name is recorded in ``missing``
+    (a set, when given) so the caller can report it; see
+    :attr:`Settings.unresolved_env`.
+    """
     if not isinstance(value, str):
         return value
-    return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value)
+
+    def resolve(match):
+        name = match.group(1)
+        resolved = os.environ.get(name)
+        if resolved is None and missing is not None:
+            missing.add(name)
+        return resolved or ""
+
+    return _ENV_REF.sub(resolve, value)
 
 
 def _auth_for(ptype, api_key):
@@ -172,12 +187,16 @@ class Settings:
     # synthesized from the NVIDIA_* env vars as a backward-compatible fallback).
     providers: tuple = ()
 
+    # Names of ${ENV_VAR} references in providers.toml that had no value. They
+    # expanded to the empty string; create_app warns about them at start-up.
+    unresolved_env: tuple = ()
 
-def _provider_from_dict(d):
+
+def _provider_from_dict(d, missing=None):
     """Build a :class:`ProviderConfig` from one ``[[provider]]`` TOML table."""
     ptype = (d.get("type") or "openai_compatible").strip()
-    api_key = _interp(d.get("api_key", ""))
-    base_url = _interp(d.get("base_url", "")) or _PROVIDER_BASE_URLS.get(ptype, "")
+    api_key = _interp(d.get("api_key", ""), missing)
+    base_url = _interp(d.get("base_url", ""), missing) or _PROVIDER_BASE_URLS.get(ptype, "")
     auth_header, auth_value, extra = _auth_for(ptype, api_key)
     extra.update(d.get("extra_headers") or {})
     return ProviderConfig(
@@ -196,7 +215,7 @@ def _provider_from_dict(d):
     )
 
 
-def _providers_from_toml(path):
+def _providers_from_toml(path, missing=None):
     """Parse a ``providers.toml`` file into a tuple of :class:`ProviderConfig`."""
     if _toml is None:
         raise RuntimeError(
@@ -206,7 +225,7 @@ def _providers_from_toml(path):
     with open(path, "rb") as fh:
         doc = _toml.load(fh)
     entries = doc.get("provider") or doc.get("providers") or []
-    return tuple(_provider_from_dict(d) for d in entries)
+    return tuple(_provider_from_dict(d, missing) for d in entries)
 
 
 def _provider_from_env(*, base, key, models, embeddings_model):
@@ -238,6 +257,10 @@ def load_settings():
     # UPSTREAM_POOL_SIZE, then THREADS, then a sane default: sized on the worker threads.
     pool_size = int(os.environ.get("UPSTREAM_POOL_SIZE", os.environ.get("THREADS", "8")))
 
+    # Collected here rather than logged: logging is not configured yet at this
+    # point, so create_app reports them once it is.
+    missing = set()
+
     return Settings(
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "11434")),
@@ -261,11 +284,12 @@ def load_settings():
         cache_ttl=float(os.environ.get("CACHE_TTL", "300")),
         cache_max_size=int(os.environ.get("CACHE_MAX_SIZE", "512")),
         cache_policy=normalize_policy(os.environ.get("CACHE_POLICY")),
-        providers=_load_providers(),
+        providers=_load_providers(missing),
+        unresolved_env=tuple(sorted(missing)),
     )
 
 
-def _load_providers():
+def _load_providers(missing=None):
     """Return the configured providers: ``providers.toml``, else the legacy env vars.
 
     The ``NVIDIA_*`` variables are a zero-config back-compat path, not application
@@ -276,7 +300,7 @@ def _load_providers():
     """
     providers_path = os.environ.get("PROVIDERS_CONFIG", "providers.toml")
     if os.path.isfile(providers_path):
-        return _providers_from_toml(providers_path)
+        return _providers_from_toml(providers_path, missing)
 
     nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
     return (_provider_from_env(

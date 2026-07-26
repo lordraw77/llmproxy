@@ -117,6 +117,90 @@ def test_toml_interpolates_env_references(env, tmp_path):
     assert provider.auth_value == "Bearer gsk_from_env"
 
 
+# --- R11: an unresolved ${ENV_VAR} is reported, not swallowed ---------------
+
+def _toml_with_refs(tmp_path, api_key='"${ABSENT_TOKEN}"'):
+    toml = tmp_path / "providers.toml"
+    toml.write_text(
+        f'[[provider]]\nname = "p"\napi_key = {api_key}\n'
+        'base_url = "https://api.invalid/v1"\nmodels = ["m"]\n'
+    )
+    return toml
+
+
+def test_an_unset_reference_is_collected(env, tmp_path):
+    """It still expands to "", but the name is no longer lost."""
+    env.delenv("ABSENT_TOKEN", raising=False)
+    env.setenv("PROVIDERS_CONFIG", str(_toml_with_refs(tmp_path)))
+
+    settings = load_settings()
+
+    assert settings.unresolved_env == ("ABSENT_TOKEN",)
+    assert settings.providers[0].auth_value == "Bearer "
+
+
+def test_a_resolved_reference_is_not_reported(env, tmp_path):
+    env.setenv("ABSENT_TOKEN", "tok")
+    env.setenv("PROVIDERS_CONFIG", str(_toml_with_refs(tmp_path)))
+
+    assert load_settings().unresolved_env == ()
+
+
+def test_an_empty_but_defined_variable_is_not_reported(env, tmp_path):
+    """Deliberately empty is a choice; undefined is a typo. Only the second warns."""
+    env.setenv("ABSENT_TOKEN", "")
+    env.setenv("PROVIDERS_CONFIG", str(_toml_with_refs(tmp_path)))
+
+    assert load_settings().unresolved_env == ()
+
+
+def test_every_unresolved_name_is_reported_once_and_sorted(env, tmp_path):
+    toml = tmp_path / "providers.toml"
+    toml.write_text(
+        '[[provider]]\nname = "a"\napi_key = "${ZED_KEY}"\n'
+        'base_url = "${HOST_REF}/v1"\nmodels = ["m"]\n'
+        '[[provider]]\nname = "b"\napi_key = "${ZED_KEY}"\n'
+        'base_url = "https://api.invalid/v1"\nmodels = ["m2"]\n'
+    )
+    for name in ("ZED_KEY", "HOST_REF"):
+        env.delenv(name, raising=False)
+    env.setenv("PROVIDERS_CONFIG", str(toml))
+
+    assert load_settings().unresolved_env == ("HOST_REF", "ZED_KEY")
+
+
+class _RecordingLogger:
+    """Stands in for the app logger, which does not propagate to caplog."""
+
+    def __init__(self):
+        self.warnings = []
+
+    def warning(self, msg, *args):
+        self.warnings.append(msg % args if args else msg)
+
+    def info(self, msg, *args):
+        pass
+
+
+@pytest.mark.parametrize("unresolved,expected", [
+    (("GROQ_TOKEN", "NVIDIA_API_KEY"), 1),
+    ((), 0),
+])
+def test_create_app_warns_about_the_unresolved_names(monkeypatch, unresolved, expected):
+    """The warning belongs to app construction: under gunicorn nothing else runs."""
+    import llmproxy.web as web
+
+    from .conftest import make_settings
+
+    logger = _RecordingLogger()
+    monkeypatch.setattr(web, "configure_logging", lambda _s: logger)
+    web.create_app(make_settings(unresolved_env=unresolved))
+
+    assert len(logger.warnings) == expected
+    for name in unresolved:
+        assert name in logger.warnings[0]
+
+
 # --- the fields that did stay ----------------------------------------------
 
 def test_the_global_knobs_are_still_settings_fields(env):

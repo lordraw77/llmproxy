@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the policy applies to entries already stored. Ineligible requests are reported
   as `skipped` under `metrics.cache`, alongside the active `policy`.
 
+- **An unset `${ENV_VAR}` in `providers.toml` is now reported at start-up.** The
+  reference expanded to the empty string in silence, so a typo in a key name
+  produced a provider that started normally and failed with a `401` on its first
+  request, far from the cause. Unresolved names are collected during parsing and
+  logged once as a warning by the application factory (where logging exists —
+  `load_settings` runs before it). A variable that is set but empty is a
+  deliberate choice and is not reported.
+
 ### Fixed
 
 - **`NO_PROXY` is now honored for upstream calls.** It was read into the settings

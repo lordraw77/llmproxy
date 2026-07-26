@@ -274,6 +274,17 @@ lives in `llmproxy/providers/translate/`, free of HTTP and unit-tested.
 default), `proxy`, and `extra_headers`. Use `${ENV_VAR}` in any string to
 interpolate from the environment (keeps secrets out of the file).
 
+A reference to a variable that is not set expands to the empty string — it does
+not stop start-up — but every such name is listed once in a start-up warning:
+
+```
+providers.toml references environment variables that are not set: GROQ_TOKEN.
+They expanded to an empty string — a provider whose api_key ended up empty will
+fail with 401 on its first request.
+```
+
+A variable that is set but empty is a deliberate choice and is not reported.
+
 **Model naming and routing**
 
 - Every provider's models are exposed together — the **union** — through

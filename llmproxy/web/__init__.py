@@ -25,6 +25,15 @@ def create_app(settings=None):
     """Build and return the configured Flask application."""
     settings = settings or load_settings()
     logger = configure_logging(settings)
+    if settings.unresolved_env:
+        # Warned here rather than in load_settings, which runs before logging is
+        # configured. Under gunicorn this is the only start-up path there is.
+        logger.warning(
+            "providers.toml references environment variables that are not set: %s. "
+            "They expanded to an empty string — a provider whose api_key ended up "
+            "empty will fail with 401 on its first request.",
+            ", ".join(settings.unresolved_env),
+        )
 
     metrics = MetricsCollector()
     cache = ResponseCache(
