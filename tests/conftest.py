@@ -33,32 +33,44 @@ def make_provider_config(name, models=(), embeddings_models=(), api_key="k", typ
     )
 
 
+#: Convenience arguments of :func:`make_settings` that describe the *default
+#: provider* rather than a :class:`Settings` field. Passing ``providers``
+#: explicitly ignores them. They exist because most tests want "one provider
+#: serving these models" and should not have to spell out a ``ProviderConfig``.
+_PROVIDER_SHORTHAND = {
+    "models": ("test-model",),
+    "embeddings_model": "test-embed",
+    "api_key": "test-key",
+}
+
+
 def make_settings(**overrides):
-    """Build a :class:`Settings` with test-safe defaults, overridable field by field."""
+    """Build a :class:`Settings` with test-safe defaults, overridable field by field.
+
+    Accepts the shorthand in :data:`_PROVIDER_SHORTHAND` on top of the real
+    fields. The model catalogue is *not* a ``Settings`` field: it belongs to the
+    registry built from ``providers`` (see ``R7``).
+    """
+    shorthand = {k: overrides.pop(k, v) for k, v in _PROVIDER_SHORTHAND.items()}
     base = dict(
         host="127.0.0.1",
         port=11434,
         log_level="CRITICAL",  # keep the test output clean
         log_tz="UTC",
         log_tzinfo=timezone.utc,
-        nvidia_api_base="https://upstream.invalid/v1",
-        nvidia_api_key="test-key",
         upstream_timeout=1.0,
         pool_size=2,
         retry_max=0,
         retry_backoff=0.0,
-        models=("test-model",),
-        default_model="test-model",
-        embeddings_model="test-embed",
     )
     base.update(overrides)
     if "providers" not in base:
         base["providers"] = (
             make_provider_config(
                 "test",
-                models=base["models"],
-                embeddings_models=(base["embeddings_model"],),
-                api_key=base["nvidia_api_key"],
+                models=shorthand["models"],
+                embeddings_models=(shorthand["embeddings_model"],),
+                api_key=shorthand["api_key"],
             ),
         )
     return Settings(**base)

@@ -74,7 +74,7 @@ def test_dashboard_escapes_metric_keys(client):
 def test_dashboard_escapes_configuration_coming_from_providers_toml(app_factory):
     """Model names are operator-controlled, but the renderer must not trust them."""
     hostile = 'x"><script>alert(1)</script>'
-    app = app_factory(models=(hostile,), default_model=hostile)
+    app = app_factory(models=(hostile,))
     html = app.test_client().get("/stats").get_data(as_text=True)
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
@@ -122,7 +122,7 @@ def test_inference_routes_do_not_500_without_a_credential(
     app_factory, offline_upstream, path, payload
 ):
     """A provider needing no key (local Ollama, vLLM) must still be served."""
-    client = app_factory(nvidia_api_key="").test_client()
+    client = app_factory(api_key="").test_client()
     # ``stream: false`` explicitly: the Ollama dialect streams by default.
     resp = client.post(path, json={"model": "test-model", "stream": False, **payload})
     assert resp.status_code == 200

@@ -48,10 +48,10 @@ def render_banner(version="dev"):
 def log_startup(logger, settings, registry):
     """Log the start-up summary: bind address, providers, exposed models, auth.
 
-    The catalogue is read from ``registry``, never from ``settings``: the
-    ``NVIDIA_*`` env vars are only a fallback source of providers, so with a
-    ``providers.toml`` in place ``settings.models`` describes models that are not
-    exposed at all (see ``F8``).
+    The catalogue is read from ``registry``, the only place it exists: the
+    ``NVIDIA_*`` env vars are a fallback source of *providers*, and no longer
+    leave a second, stale copy of the model list on ``settings`` (see ``F8`` and
+    ``R7``).
 
     Args:
         logger: The configured application logger.

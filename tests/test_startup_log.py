@@ -1,9 +1,13 @@
 """Regression tests for F8: the start-up summary must describe the registry.
 
 Before the fix ``main()`` logged ``settings.models`` / ``settings.default_model``,
-which derive from the ``NVIDIA_*`` env vars. With a ``providers.toml`` in place
-those fields are stale: the banner advertised models that are not exposed and
+which derived from the ``NVIDIA_*`` env vars. With a ``providers.toml`` in place
+those fields were stale: the banner advertised models that are not exposed and
 omitted the ones that are.
+
+``R7`` then removed those fields outright, so the summary can no longer read a
+second catalogue even by accident. What is left to pin is that it reports the
+registry's catalogue faithfully — including when that catalogue is empty.
 """
 
 from llmproxy.banner import log_startup
@@ -40,9 +44,9 @@ def _registry(chat, embeddings=()):
     )
 
 
-def test_startup_log_lists_registry_models_not_settings_models():
-    """The exposed catalogue comes from the registry, not from the NVIDIA_* fallback."""
-    settings = make_settings(models=("stale-env-model",), default_model="stale-env-model")
+def test_startup_log_lists_the_registry_catalogue():
+    """Every exposed model is named, chat and embeddings alike."""
+    settings = make_settings()
     registry = _registry(
         chat=[("groq", "groq:llama-3.3-70b"), ("gemini", "gemini:gemini-2.0-flash")],
         embeddings=[("gemini", "gemini:text-embedding-004")],
@@ -51,14 +55,14 @@ def test_startup_log_lists_registry_models_not_settings_models():
 
     log_startup(logger, settings, registry)
 
-    assert "stale-env-model" not in logger.text
+    assert "test-model" not in logger.text, "the fixture's own provider is not this registry"
     assert "groq:llama-3.3-70b" in logger.text
     assert "gemini:gemini-2.0-flash" in logger.text
     assert "gemini:text-embedding-004" in logger.text
 
 
 def test_startup_log_reports_registry_default_and_providers():
-    settings = make_settings(default_model="stale-env-model")
+    settings = make_settings()
     registry = _registry(chat=[("groq", "groq:llama-3.3-70b"), ("cerebras", "cerebras:llama-3.3-70b")])
     logger = _RecordingLogger()
 

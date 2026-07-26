@@ -56,8 +56,7 @@ def test_provider_for_still_resolves_a_known_model():
 @pytest.fixture
 def empty_registry_client(app_factory):
     """A client over an app whose provider exposes no model at all."""
-    app = app_factory(providers=(make_provider_config("empty"),), models=(),
-                      default_model="", embeddings_model="")
+    app = app_factory(providers=(make_provider_config("empty"),))
     return app.test_client()
 
 
@@ -94,9 +93,7 @@ def test_a_provider_without_an_embeddings_endpoint_answers_400(app_factory):
     """Anthropic and Gemini raise from ``_url``: a capability refusal, not a bug."""
     gemini = make_provider_config("gemini", models=("gemini-2.0-flash",),
                                   embeddings_models=("gemini-embed",), type="gemini")
-    client = app_factory(providers=(gemini,), models=("gemini-2.0-flash",),
-                         default_model="gemini-2.0-flash",
-                         embeddings_model="gemini-embed").test_client()
+    client = app_factory(providers=(gemini,)).test_client()
 
     resp = client.post("/v1/embeddings", json={"model": "gemini-embed", "input": "hi"})
 

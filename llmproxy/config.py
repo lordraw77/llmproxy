@@ -119,9 +119,7 @@ class Settings:
     log_tz: str
     log_tzinfo: object
 
-    # Upstream (NVIDIA OpenAI-compatible API).
-    nvidia_api_base: str
-    nvidia_api_key: str
+    # Upstream connection budget, shared by every provider.
     upstream_timeout: float
     pool_size: int
 
@@ -157,12 +155,7 @@ class Settings:
     proxy_api_key: str = ""
     auth_exempt_paths: frozenset = field(default_factory=lambda: frozenset({"/", "/health"}))
 
-    # Exposed chat models.
-    models: tuple = ()
-    default_model: str = ""
-
     # Embeddings.
-    embeddings_model: str = ""
     embeddings_input_type: str = ""
 
     # Response cache (non-streaming replies only). Disabled by default.
@@ -214,7 +207,7 @@ def _providers_from_toml(path):
     return tuple(_provider_from_dict(d) for d in entries)
 
 
-def _provider_from_env(base, key, models, embeddings_model):
+def _provider_from_env(*, base, key, models, embeddings_model):
     """Synthesize the single legacy NVIDIA provider from the ``NVIDIA_*`` env vars."""
     auth_header, auth_value, extra = _auth_for("openai_compatible", key)
     return ProviderConfig(
@@ -240,23 +233,8 @@ def load_settings():
         log_tzinfo = timezone.utc
         log_tz = "UTC"
 
-    nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
-    models = _parse_models(os.environ.get("NVIDIA_MODELS", nvidia_model), nvidia_model)
-
     # UPSTREAM_POOL_SIZE, then THREADS, then a sane default: sized on the worker threads.
     pool_size = int(os.environ.get("UPSTREAM_POOL_SIZE", os.environ.get("THREADS", "8")))
-
-    # Providers: a declarative providers.toml when present, otherwise a single
-    # provider synthesized from the NVIDIA_* env vars (zero-config back-compat).
-    nvidia_api_base = os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1")
-    embeddings_model = os.environ.get("NVIDIA_EMBEDDINGS_MODEL", "nvidia/nv-embedqa-e5-v5")
-    providers_path = os.environ.get("PROVIDERS_CONFIG", "providers.toml")
-    if os.path.isfile(providers_path):
-        providers = _providers_from_toml(providers_path)
-    else:
-        providers = (_provider_from_env(
-            nvidia_api_base, os.environ.get("NVIDIA_API_KEY", ""), models, embeddings_model,
-        ),)
 
     return Settings(
         host=os.environ.get("HOST", "0.0.0.0"),
@@ -264,8 +242,6 @@ def load_settings():
         log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         log_tz=log_tz,
         log_tzinfo=log_tzinfo,
-        nvidia_api_base=nvidia_api_base,
-        nvidia_api_key=os.environ.get("NVIDIA_API_KEY", ""),
         upstream_timeout=float(os.environ.get("UPSTREAM_TIMEOUT", "120")),
         pool_size=pool_size,
         force_upstream_stream=os.environ.get("FORCE_UPSTREAM_STREAM", "false").strip().lower()
@@ -277,14 +253,33 @@ def load_settings():
         retry_max=int(os.environ.get("RETRY_MAX", "2")),
         retry_backoff=float(os.environ.get("RETRY_BACKOFF", "0.5")),
         proxy_api_key=os.environ.get("PROXY_API_KEY", "").strip(),
-        models=tuple(models),
-        default_model=models[0],
-        embeddings_model=embeddings_model,
         embeddings_input_type=os.environ.get("EMBEDDINGS_INPUT_TYPE", "query").strip(),
         cache_enabled=os.environ.get("CACHE_ENABLED", "false").strip().lower()
         in ("1", "true", "yes", "on"),
         cache_ttl=float(os.environ.get("CACHE_TTL", "300")),
         cache_max_size=int(os.environ.get("CACHE_MAX_SIZE", "512")),
         cache_policy=normalize_policy(os.environ.get("CACHE_POLICY")),
-        providers=providers,
+        providers=_load_providers(),
     )
+
+
+def _load_providers():
+    """Return the configured providers: ``providers.toml``, else the legacy env vars.
+
+    The ``NVIDIA_*`` variables are a zero-config back-compat path, not application
+    state: they are read here, turned into one provider, and never surface on
+    :class:`Settings`. The catalogue of exposed models has a single authority, the
+    :class:`~llmproxy.providers.registry.ProviderRegistry` built from these — which
+    is what a stale copy on ``Settings`` used to contradict (``F2``, ``F8``).
+    """
+    providers_path = os.environ.get("PROVIDERS_CONFIG", "providers.toml")
+    if os.path.isfile(providers_path):
+        return _providers_from_toml(providers_path)
+
+    nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+    return (_provider_from_env(
+        base=os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1"),
+        key=os.environ.get("NVIDIA_API_KEY", ""),
+        models=_parse_models(os.environ.get("NVIDIA_MODELS", nvidia_model), nvidia_model),
+        embeddings_model=os.environ.get("NVIDIA_EMBEDDINGS_MODEL", "nvidia/nv-embedqa-e5-v5"),
+    ),)
