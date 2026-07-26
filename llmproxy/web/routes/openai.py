@@ -3,12 +3,12 @@
 import json
 import time
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
 from ..container import deps
-from ..formatting import completion_json, completion_stream, model_entry
+from ..formatting import completion_json, completion_stream, model_entry, streaming_response
 
 bp = Blueprint("openai", __name__)
 
@@ -80,7 +80,7 @@ def v1_chat_completions():
         finally:
             upstream.close()
 
-    return Response(relay(), mimetype="text/event-stream")
+    return streaming_response(relay, "text/event-stream")
 
 
 @bp.route("/v1/embeddings", methods=["POST"])

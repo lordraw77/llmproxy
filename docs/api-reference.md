@@ -509,6 +509,15 @@ these do **not** count as misses) and the derived `hit_rate`
 (`hits / (hits + misses)`, `0`–`1`). See
 [Response caching](configuration.md#response-caching) for the behavior.
 
+`latency_ms` measures the **full client-side duration**, streaming included: a
+streaming request is recorded when its last frame leaves the proxy, not when its
+headers do, and `requests.in_flight` keeps counting it for the whole time it is
+generating. The two therefore agree — a request visible in the gauge is one that
+has not been added to `total` yet. (Up to and including 1.3.0 the counters were
+written when the response headers were emitted, so a streaming request reported
+the few milliseconds of handler setup as its latency and left the gauge as soon
+as it started producing output.)
+
 Both endpoints respect the optional inbound `PROXY_API_KEY` (they are **not**
 auth-exempt, unlike `/` and `/health`). The `/stats` and `/stats.json` requests
 are themselves excluded from the counters, so the dashboard's auto-refresh does

@@ -5,6 +5,11 @@ latency, token, and upstream counters in memory. It has no external dependencies
 and no persistence — it is a lightweight, always-on observability surface exposed
 by the ``/stats`` endpoints.
 
+Latency covers the whole client-side duration, streaming included: streaming
+routes hand their accounting to the response generator (see
+:class:`~llmproxy.web.middleware.DeferredMetrics`), so a request is recorded when
+its last frame leaves and stays counted in ``in_flight`` until then.
+
 Note on multi-worker deployments: under gunicorn each worker is a separate
 process with its own collector, so a single ``/stats`` response reflects only the
 worker that served it. For aggregated, cross-worker metrics use an external

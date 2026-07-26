@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Latency and in-flight metrics no longer ignore the duration of a stream.**
+  Both were written when the response headers were emitted, which for a streaming
+  route is before the first token exists: `latency_ms` measured the handler setup
+  (a few ms) and reported it as the request duration, and `requests.in_flight`
+  dropped the request while it was still generating, so the gauge under-reported
+  exactly the load that lasts. Streaming routes now hand their accounting — and
+  their closing access-log line — to the response generator, which settles it from
+  the same `finally` that closes the upstream, on a completed stream and on a
+  client hang-up alike. The byte relay of `/v1/chat/completions` is covered too.
 - **Tool calling and multimodal content now work on the native `gemini`
   provider.** The OpenAI → Gemini translation only handled the first turn of a
   conversation: `str(content)` sent a Python `repr` when the content was a block

@@ -11,6 +11,7 @@ from flask import Response, jsonify
 
 from ..upstream.client import resp_json
 from ..upstream.sse import iter_nvidia_sse
+from .middleware import defer_request_metrics
 
 
 def now_iso():
@@ -95,7 +96,31 @@ def completion_stream(upstream, mimetype, frame_chunk, frame_done, logger, metri
             # mid-stream): release the upstream connection back to the pool.
             upstream.close()
 
-    return Response(generate(), mimetype=mimetype)
+    return streaming_response(generate, mimetype)
+
+
+def streaming_response(generate, mimetype):
+    """Wrap a streaming generator into a :class:`Response` that closes out its request.
+
+    Every streaming route ends here, including the byte relay of
+    ``/v1/chat/completions`` that does no re-framing. The wrapper takes over the
+    request's latency and in-flight accounting (``F9``) so that both are settled
+    when the last frame leaves, not when the headers do.
+
+    Args:
+        generate: A zero-arg callable returning the frame generator.
+        mimetype: ``text/event-stream`` or ``application/x-ndjson``.
+    """
+    deferred = defer_request_metrics()
+
+    def tracked():
+        try:
+            yield from generate()
+        finally:
+            if deferred is not None:
+                deferred.finish()
+
+    return Response(tracked(), mimetype=mimetype)
 
 
 def log_stream_usage(logger, metrics, rid, usage):

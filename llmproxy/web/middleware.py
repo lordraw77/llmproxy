@@ -60,6 +60,63 @@ def _metrics_label():
     return rule.rule if rule is not None else _UNMATCHED
 
 
+class DeferredMetrics:
+    """A request's bookkeeping, postponed until its streamed body is drained.
+
+    ``after_request`` fires when the headers are emitted, which for a streaming
+    route is *before* a single token has been generated: recording there measures
+    the handler setup (a few ms) and reports it as the request latency, while
+    ``teardown_request`` drops the in-flight gauge on a request that is still
+    running (``F9``). Both are handed to the streaming generator instead, which
+    calls :meth:`finish` from its ``finally`` — on the normal path and on a client
+    hang-up alike.
+
+    The generator runs outside the request context, so everything it needs is
+    captured here while the context is still alive. ``status`` is filled in later
+    by ``after_request``, which does run before the body is consumed.
+    """
+
+    def __init__(self, logger, metrics, rid, label, start):
+        self._logger = logger
+        self._metrics = metrics
+        self._rid = rid
+        self._label = label
+        self._start = start
+        self.method = request.method
+        self.path = request.path
+        #: Response status, set by ``after_request`` once the response exists.
+        self.status = 200
+
+    def finish(self):
+        """Record the request with its real, end-of-stream duration and log it."""
+        elapsed_ms = (time.perf_counter() - self._start) * 1000
+        self._metrics.record(self._label, self.status, elapsed_ms)
+        self._metrics.end()
+        self._logger.info(
+            "[%s] <-- %s %s | status=%s duration=%.0fms (stream complete)",
+            self._rid, self.method, self.path, self.status, elapsed_ms,
+        )
+
+
+def defer_request_metrics():
+    """Hand the current request's metrics and access log over to a streaming generator.
+
+    Returns:
+        A :class:`DeferredMetrics` to be finished from the generator's ``finally``,
+        or ``None`` when the request is not tracked (an exempt path) — in which
+        case the ordinary hooks apply and there is nothing to defer.
+    """
+    if not getattr(g, "metrics_tracked", False):
+        return None
+    container = deps()
+    deferred = DeferredMetrics(
+        container.logger, container.metrics,
+        getattr(g, "req_id", None), _metrics_label(), g.req_start,
+    )
+    g.deferred_metrics = deferred
+    return deferred
+
+
 def register_middleware(app):
     """Attach the before/after-request hooks to ``app``."""
 
@@ -99,7 +156,16 @@ def register_middleware(app):
 
     @app.after_request
     def _log_request_end(response):
-        """Log the outcome and total client-side duration, and record request metrics."""
+        """Log the outcome and total client-side duration, and record request metrics.
+
+        A streaming route has handed both over to its generator (``F9``): here the
+        body has not been produced yet, so all this hook can contribute is the
+        final status code.
+        """
+        deferred = getattr(g, "deferred_metrics", None)
+        if deferred is not None:
+            deferred.status = response.status_code
+            return response
         if hasattr(g, "req_start"):
             elapsed_ms = (time.perf_counter() - g.req_start) * 1000
             deps().logger.info(
@@ -113,6 +179,10 @@ def register_middleware(app):
 
     @app.teardown_request
     def _end_metrics(exc=None):
-        """Balance the in-flight gauge even when a request errors out before after_request."""
-        if getattr(g, "metrics_tracked", False):
+        """Balance the in-flight gauge even when a request errors out before after_request.
+
+        Skipped for a deferred (streaming) request: it is still in flight here, and
+        its generator's ``finally`` owns the decrement.
+        """
+        if getattr(g, "metrics_tracked", False) and getattr(g, "deferred_metrics", None) is None:
             deps().metrics.end()
