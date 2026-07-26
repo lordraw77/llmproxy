@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Tool calling and multimodal content now work on the native `gemini`
+  provider.** The OpenAI → Gemini translation only handled the first turn of a
+  conversation: `str(content)` sent a Python `repr` when the content was a block
+  list, `assistant.tool_calls` were dropped (the turn reached Gemini as the
+  literal text `"None"`), and a `role="tool"` message was forwarded as prose, so
+  the tool result never reached the model as a result. Assistant tool calls now
+  become `functionCall` parts, tool results become `functionResponse` parts paired
+  by function **name** (Gemini does not use the OpenAI call id), block content
+  becomes real parts — text, `inlineData` for `data:` image URIs and audio,
+  `fileData` for remote URIs — and consecutive same-role turns are merged, which
+  Gemini requires. The request-side translation moved to
+  `llmproxy/providers/translate/gemini.py`, free of HTTP and unit-tested.
+  Validated end-to-end against the live API. **The `anthropic` provider still has
+  the original defect** and cannot do a tool-calling round-trip.
 - **The start-up summary describes the registry, not the environment.** It read
   `settings.models` / `settings.default_model`, which derive from the `NVIDIA_*`
   variables: with a `providers.toml` in place the banner listed models that were

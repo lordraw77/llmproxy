@@ -150,6 +150,70 @@ def test_a_turn_of_only_unsupported_blocks_is_dropped():
     assert contents == []
 
 
+# --- malformed input (a proxy takes whatever the client sends) -------------
+
+def test_non_string_non_list_content_is_stringified_as_a_last_resort():
+    """A number or bool as ``content``: there is nothing better than its text."""
+    _, contents = to_contents([{"role": "user", "content": 42}])
+    assert contents[0]["parts"] == [{"text": "42"}]
+
+
+def test_bare_strings_inside_a_block_list_are_accepted():
+    _, contents = to_contents([{"role": "user", "content": ["hi", "", "there"]}])
+    assert contents[0]["parts"] == [{"text": "hi"}, {"text": "there"}]
+
+
+def test_non_dict_blocks_are_skipped():
+    _, contents = to_contents([{"role": "user", "content": [None, 7, {"type": "text", "text": "hi"}]}])
+    assert contents[0]["parts"] == [{"text": "hi"}]
+
+
+def test_an_empty_text_block_produces_no_part():
+    _, contents = to_contents([{"role": "user", "content": [{"type": "text", "text": ""}]}])
+    assert contents == []
+
+
+def test_a_block_carrying_text_without_a_type_is_still_text():
+    _, contents = to_contents([{"role": "user", "content": [{"text": "hi"}]}])
+    assert contents[0]["parts"] == [{"text": "hi"}]
+
+
+@pytest.mark.parametrize("url", ["", "data:image/png;base64,", "data:,"])
+def test_unusable_image_urls_produce_no_part(url):
+    _, contents = to_contents([{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": url}},
+        {"type": "text", "text": "hi"},
+    ]}])
+
+    assert contents[0]["parts"] == [{"text": "hi"}]
+
+
+def test_a_data_uri_without_a_mime_type_falls_back_to_octet_stream():
+    _, contents = to_contents([{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "data:;base64,QQ=="}},
+    ]}])
+
+    assert contents[0]["parts"][0]["inlineData"]["mimeType"] == "application/octet-stream"
+
+
+def test_input_audio_without_data_is_dropped_and_defaults_to_wav_otherwise():
+    _, empty = to_contents([{"role": "user", "content": [{"type": "input_audio", "input_audio": {}}]}])
+    assert empty == []
+
+    _, contents = to_contents([{"role": "user", "content": [
+        {"type": "input_audio", "input_audio": {"data": "QQ=="}},
+    ]}])
+    assert contents[0]["parts"][0]["inlineData"]["mimeType"] == "audio/wav"
+
+
+def test_a_tool_result_sent_as_blocks_keeps_its_text():
+    _, contents = to_contents([{"role": "tool", "name": "f", "content": [
+        {"type": "text", "text": "sun"}, {"type": "text", "text": "ny"},
+    ]}])
+
+    assert contents[0]["parts"][0]["functionResponse"]["response"] == {"result": "sunny"}
+
+
 # --- the tool round-trip ---------------------------------------------------
 
 ASSISTANT_CALL = {
