@@ -236,20 +236,24 @@ models = ["claude-opus-4-8", "claude-sonnet-5"]
 `anthropic` and `gemini` are translated natively to and from the OpenAI shape
 (request, response, and streaming), so clients keep speaking OpenAI/Ollama.
 
-For **`gemini`** the translation covers a full conversation, not just the first
-turn: `tool_calls` on an assistant message become `functionCall` parts, a
-`role="tool"` message becomes the matching `functionResponse` (paired by function
-name, which is what Gemini keys on), block content becomes proper `parts` — text,
-`inlineData` for `data:` image URIs and audio, `fileData` for remote URIs — and
-consecutive same-role turns are merged, since Gemini only knows `user` and
-`model`. Content blocks of a type Gemini has no part for (e.g. `video_url`) are
-dropped rather than stringified. The translation lives in
-`llmproxy/providers/translate/gemini.py`.
+For both native providers the translation covers a full conversation, not just
+the first turn — a tool-calling round-trip survives it. The request-side half
+lives in `llmproxy/providers/translate/`, free of HTTP and unit-tested.
 
-> **`anthropic` is not there yet.** Its request-side translation still drops
-> `assistant.tool_calls` and forwards a `role="tool"` message as plain user text,
-> so a tool-calling round-trip against a Claude model does not work. Use an
-> `openai_compatible` provider for tool-calling workloads until that lands.
+| | `gemini` | `anthropic` |
+|---|---|---|
+| Assistant tool calls | `functionCall` part | `tool_use` block |
+| Tool result (`role="tool"`) | `functionResponse` part in a user turn, paired **by function name** — Gemini does not use the OpenAI call id | `tool_result` block in a user turn, paired by `tool_use_id` |
+| Text blocks | `parts[].text` | `text` blocks |
+| `data:` image URIs | `inlineData` (also audio, via `input_audio`) | `image` / `base64` source |
+| Remote image URIs | `fileData` — Gemini does not fetch arbitrary URLs, so this fails explicitly rather than dropping the image | `image` / `url` source — Anthropic fetches it |
+| Consecutive same-role turns | merged (only `user` and `model` exist) | merged — which is also what keeps parallel tool results in a single turn |
+| Unsupported block types | dropped, never stringified | dropped, never stringified |
+
+> **`anthropic` is not validated against the live API.** The translation is
+> pinned by unit tests on the shape of the request body; no Anthropic credential
+> was available to exercise a real tool-calling round-trip. Treat it as a
+> declared residual risk. The `gemini` side *was* validated end-to-end.
 
 **Per-provider keys**: `name`, `type`, `base_url`, `api_key`, `models`,
 `embeddings_models`, `timeout`, `api_version` (Azure), `max_tokens` (Anthropic

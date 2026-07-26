@@ -33,8 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `fileData` for remote URIs — and consecutive same-role turns are merged, which
   Gemini requires. The request-side translation moved to
   `llmproxy/providers/translate/gemini.py`, free of HTTP and unit-tested.
-  Validated end-to-end against the live API. **The `anthropic` provider still has
-  the original defect** and cannot do a tool-calling round-trip.
+  Validated end-to-end against the live API.
+- **Tool calling and multimodal content now work on the native `anthropic`
+  provider — but this half is not validated against the live API.** The same
+  defect: `assistant.tool_calls` were dropped and a `role="tool"` message was
+  forwarded as `str(content)` inside a plain user turn, which the model reads as
+  prose rather than as the answer to its call. Tool calls now become `tool_use`
+  blocks, tool results become `tool_result` blocks paired by `tool_use_id` inside
+  a user turn, block content becomes `text` and `image` blocks (`base64` source
+  for `data:` URIs, `url` source otherwise), and consecutive same-role turns are
+  merged — which is what keeps parallel tool results in a single user turn. A
+  `tool_result` whose `tool_use` is absent from the history would be rejected
+  upstream, so it degrades to text. **No Anthropic credential was available:**
+  the tests pin the shape of the produced body only. Declared residual risk.
 - **The start-up summary describes the registry, not the environment.** It read
   `settings.models` / `settings.default_model`, which derive from the `NVIDIA_*`
   variables: with a `providers.toml` in place the banner listed models that were
