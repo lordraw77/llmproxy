@@ -112,11 +112,13 @@ def _render(payload):
     </div>
     <table>
       <tr><td class="k">state</td><td class="v">{state}</td></tr>
+      <tr><td class="k">policy</td><td class="v">{_h(cache['policy'])}</td></tr>
       <tr><td class="k">entries</td><td class="v">{cache['entries']} / {cache['max_size']}</td></tr>
       <tr><td class="k">ttl</td><td class="v">{cache['ttl_seconds']}s</td></tr>
       <tr><td class="k">stores</td><td class="v">{cache['stores']}</td></tr>
       <tr><td class="k">evictions</td><td class="v">{cache['evictions']}</td></tr>
       <tr><td class="k">expirations</td><td class="v">{cache['expirations']}</td></tr>
+      <tr><td class="k">skipped (policy)</td><td class="v">{cache['skipped']}</td></tr>
     </table>
   </div>"""
     else:

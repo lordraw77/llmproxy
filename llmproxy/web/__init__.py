@@ -31,6 +31,7 @@ def create_app(settings=None):
         enabled=settings.cache_enabled,
         ttl=settings.cache_ttl,
         max_size=settings.cache_max_size,
+        policy=settings.cache_policy,
     )
     registry = build_providers(settings, logger, metrics)
     completions = CompletionService(registry, cache=cache)

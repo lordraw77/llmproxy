@@ -85,7 +85,10 @@ upstream calls. When `CACHE_ENABLED` is set, the `CompletionService` and
 `EmbeddingService` compute a SHA-256 key from the outbound payload; a hit replays
 the stored body as a `CachedResponse` (no network call), a miss stores the
 successful reply. The cache is a per-worker TTL + LRU store (`CACHE_TTL`,
-`CACHE_MAX_SIZE`) and never caches streaming responses. Its hit/miss counters are
+`CACHE_MAX_SIZE`) and never caches streaming responses. `CACHE_POLICY` decides
+which requests are eligible at all: by default only embeddings and completions
+that can have a single answer (a `seed`, or `temperature: 0`), so turning the
+cache on never silently replays a sampled generation. Its hit/miss counters are
 surfaced under `metrics.cache` at `/stats`. See
 [Configuration → Response caching](configuration.md#response-caching).
 
@@ -172,8 +175,9 @@ tests.
   non-streaming generations don't trip the read timeout.
 - **Optional response cache** — when `CACHE_ENABLED` is set, identical
   non-streaming requests are served from a per-worker in-memory TTL + LRU cache
-  (`CACHE_TTL`, `CACHE_MAX_SIZE`), skipping the upstream call. Streaming replies
-  are never cached; cache activity is reported at `/stats`.
+  (`CACHE_TTL`, `CACHE_MAX_SIZE`), skipping the upstream call. `CACHE_POLICY`
+  restricts eligibility — deterministic replies only, by default. Streaming
+  replies are never cached; cache activity is reported at `/stats`.
 - **Optional inbound auth** — when `PROXY_API_KEY` is set, a `before_request`
   hook enforces it on every path except `/` and `/health`.
 - **Threaded server** — locally, `app.run(..., threaded=True)` handles

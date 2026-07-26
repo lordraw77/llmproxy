@@ -25,11 +25,16 @@ class CompletionService:
         yields distinct entries), but the model is rewritten to the provider's
         **native** id before the request leaves the proxy. Only non-streaming calls
         are cacheable: a streaming response cannot be replayed.
+
+        Eligibility is not automatic: :meth:`~llmproxy.cache.ResponseCache.allows`
+        applies the configured ``CACHE_POLICY``, so a sampled completion
+        (``temperature > 0`` without a ``seed``) goes upstream every time unless
+        the deployment has explicitly opted into replaying it.
         """
         provider, native_id = self._registry.provider_for(payload["model"])
         cache = self._cache
 
-        if stream or cache is None or not cache.enabled:
+        if stream or cache is None or not cache.allows("chat", payload):
             return provider.post(self._with_native(payload, native_id), stream, rid)
 
         # Import here to avoid a hard dependency when caching is disabled.

@@ -28,6 +28,7 @@ All configuration is provided through environment variables, typically via a
 | `CACHE_ENABLED` | `false` | No | When truthy (`1`/`true`/`yes`/`on`), enables the **response cache**: identical **non-streaming** requests are served from memory, skipping the upstream call. Streaming requests are never cached. See [Response caching](#response-caching). |
 | `CACHE_TTL` | `300` | No | Time-to-live, in seconds, of each cache entry. After it elapses the entry expires and the next identical request goes upstream again. A non-positive value disables the cache. |
 | `CACHE_MAX_SIZE` | `512` | No | Maximum number of entries kept in the cache. Once the cap is reached the **least-recently-used** entry is evicted to make room. A non-positive value disables the cache. |
+| `CACHE_POLICY` | `deterministic` | No | Which requests are **eligible** for the cache once it is enabled: `off`, `embeddings`, `deterministic`, or `all`. The default only caches replies that can have a single correct value (embeddings, or completions with a `seed` / `temperature: 0`), so enabling the cache never silently replays a sampled answer. An unrecognized value falls back to `deterministic`. See [Cache eligibility](#cache-eligibility). |
 | `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
 
 ## Example `.env`
@@ -106,15 +107,17 @@ provider — cutting latency and, for metered upstreams, token cost. It is
 
 ```dotenv
 CACHE_ENABLED=on
-CACHE_TTL=300        # entry time-to-live in seconds (default 300)
-CACHE_MAX_SIZE=512   # max entries; LRU eviction past the cap (default 512)
+CACHE_TTL=300                 # entry time-to-live in seconds (default 300)
+CACHE_MAX_SIZE=512            # max entries; LRU eviction past the cap (default 512)
+CACHE_POLICY=deterministic    # which requests are eligible (default deterministic)
 ```
 
 How it works:
 
 - **What is cached** — successful (`2xx`), **non-streaming** chat/text completions
   (`/api/chat`, `/api/generate`, `/v1/chat/completions`, `/v1/completions`,
-  `/completion`) and embeddings (`/v1/embeddings`, `/api/embeddings`, `/api/embed`).
+  `/completion`) and embeddings (`/v1/embeddings`, `/api/embeddings`, `/api/embed`),
+  **subject to `CACHE_POLICY`** (see [Cache eligibility](#cache-eligibility)).
   **Streaming responses are never cached** — they are consumed incrementally and
   cannot be replayed.
 - **Cache key** — a SHA-256 of the canonicalized payload actually sent upstream
@@ -126,7 +129,7 @@ How it works:
 - **Size / eviction** — the cache holds at most `CACHE_MAX_SIZE` entries. When the
   cap is exceeded the least-recently-used entry is evicted (classic LRU).
 - **Observability** — hit/miss counts, hit rate, live entry count, stores,
-  evictions and expirations are reported under `metrics.cache` at `/stats.json`
+  evictions, expirations and policy `skipped` counts are reported under `metrics.cache` at `/stats.json`
   and on the `/stats` dashboard. See [Statistics & metrics](api-reference.md#statistics).
 
 > **Per-worker, in-memory.** Like the metrics, the cache lives in each worker
@@ -134,11 +137,42 @@ How it works:
 > `N` workers a request may hit whichever worker holds the entry; the reported hit
 > rate is therefore a per-worker figure. A restart clears the cache.
 
-Because completions are typically non-deterministic (`temperature > 0`, no fixed
-`seed`), caching is most useful for **deterministic** workloads — `temperature: 0`
-or a fixed `seed`, repeated embeddings of the same corpus, health-check style
-probes, or identical prompts replayed by a client. Leave it off if you require a
-fresh generation on every call.
+### Cache eligibility
+
+A cache hit replays a stored answer. For an embedding that is simply a saved
+round-trip: the same input maps to the same vector by construction. For a
+completion sampled with `temperature > 0` it is a **behavioral change** — two
+identical requests are supposed to produce different text, and within the TTL
+they no longer do.
+
+`CACHE_POLICY` makes that trade-off explicit instead of bundling it into
+`CACHE_ENABLED`. Levels, from strictest to loosest:
+
+| `CACHE_POLICY` | Embeddings | Completions | Use it when |
+|---|---|---|---|
+| `off` | never | never | You want the cache wired and its counters visible on `/stats`, but every request to go upstream — e.g. while A/B-testing the cache's effect, or to disable it for one deployment without editing the rest of the configuration. |
+| `embeddings` | cached | never | RAG-style workloads: re-embedding the same corpus is pure waste, but every generation must be fresh. |
+| `deterministic` **(default)** | cached | only when the reply can have one value: an explicit `seed`, or `temperature: 0` **and** `top_p: 1` | The safe default. Enabling the cache never changes what a sampled request returns. |
+| `all` | cached | always | Cost/latency above variety — demos, evaluation harnesses replaying a fixed prompt set, metered upstreams. **You are accepting that identical prompts return identical text for the whole TTL.** |
+
+Notes on `deterministic`:
+
+- A `seed` counts as deterministic **regardless of temperature** — that is exactly
+  what a seed is for. Note that most upstreams treat `seed` as best-effort.
+- Absent sampling fields take the OpenAI defaults (`temperature: 1`, `top_p: 1`),
+  so a request that specifies neither is **not** eligible. This is the common
+  case: a plain client gets fresh generations by default.
+- `temperature: 0` with a restricted `top_p` (e.g. `0.9`) is not eligible: the
+  nucleus still admits more than one continuation.
+
+Requests turned away by the policy are counted as `skipped` in `metrics.cache`.
+A hit rate of zero alongside a growing `skipped` means the policy is doing its
+job, not that the cache is broken — raise the level if that is not what you want.
+
+> **Tightening the policy takes effect immediately.** Eligibility is checked
+> *before* the lookup, so entries stored under `all` are never served to a request
+> that `deterministic` rejects — no flush and no restart needed. They simply sit
+> there until the TTL or the LRU cap drops them.
 
 ## Multi-model support
 
@@ -245,7 +279,7 @@ The two files have **different jobs** and are used together:
 | `HOST`, `PORT` | **.env** | Server bind address. |
 | `LOG_LEVEL`, `LOG_TZ` / `TZ` | **.env** | Logging / clock. |
 | `PROXY_API_KEY` | **.env** | Inbound auth (global). |
-| `CACHE_ENABLED`, `CACHE_TTL`, `CACHE_MAX_SIZE` | **.env** | Response cache (global). |
+| `CACHE_ENABLED`, `CACHE_TTL`, `CACHE_MAX_SIZE`, `CACHE_POLICY` | **.env** | Response cache (global). |
 | `RETRY_MAX`, `RETRY_BACKOFF` | **.env** | Retry policy (applies to every provider). |
 | `FORCE_UPSTREAM_STREAM` | **.env** | Force-stream re-aggregation (global). |
 | `EMBEDDINGS_INPUT_TYPE` | **.env** | Default embeddings `input_type` (global). |

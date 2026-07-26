@@ -24,13 +24,13 @@ class EmbeddingService:
 
         The payload carries the exposed model name; it is cached on that name and
         rewritten to the provider-native id before the upstream call. Embeddings are
-        deterministic, so identical payloads are served from the response cache when
-        enabled (see :mod:`llmproxy.cache`).
+        deterministic by construction, so they stay eligible under every
+        ``CACHE_POLICY`` level except ``off`` (see :mod:`llmproxy.cache`).
         """
         provider, native_id = self._registry.embeddings_provider_for(payload["model"])
         cache = self._cache
 
-        if cache is None or not cache.enabled:
+        if cache is None or not cache.allows("embeddings", payload):
             return provider.post(self._with_native(payload, native_id), stream=False, rid=rid, path="/embeddings")
 
         from ..cache import CachedResponse

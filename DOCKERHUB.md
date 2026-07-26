@@ -42,7 +42,8 @@ hosted NVIDIA model.
   exponential backoff on `429`/`5xx`/network errors (honours `Retry-After`).
 - **Response caching** — optional per-worker in-memory cache for non-streaming
   completions and embeddings, with configurable TTL and size
-  (`CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`) and hit/miss stats at `/stats`.
+  (`CACHE_ENABLED`/`CACHE_TTL`/`CACHE_MAX_SIZE`/`CACHE_POLICY`) and hit/miss stats
+  at `/stats`.
 - **Optional inbound auth** — protect the proxy with `PROXY_API_KEY`
   (`Authorization: Bearer` or `X-Api-Key`); `/` and `/health` stay open for
   health-checks.
@@ -128,6 +129,7 @@ All configuration is via environment variables.
 | `CACHE_ENABLED` | `false` | Enable the response cache for non-streaming replies (`1`/`true`/`yes`/`on`). Identical requests skip the upstream call. Stats at `/stats`. |
 | `CACHE_TTL` | `300` | Cache entry time-to-live (seconds). |
 | `CACHE_MAX_SIZE` | `512` | Max cache entries (LRU eviction past the cap). |
+| `CACHE_POLICY` | `deterministic` | Which requests are eligible: `off`, `embeddings`, `deterministic` (embeddings + completions with a `seed` or `temperature: 0`), `all` (everything — identical prompts return identical text for the whole TTL). |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | _(empty)_ | Outbound egress proxy to reach the upstream (corporate proxy). Without it, a proxied host hangs until `UPSTREAM_TIMEOUT`. Keep `localhost,127.0.0.1` in `NO_PROXY`. |
 | `RETRY_MAX` | `2` | Retries beyond the first attempt on transient errors (`0` disables). |
 | `RETRY_BACKOFF` | `0.5` | Base of the exponential backoff (seconds). |

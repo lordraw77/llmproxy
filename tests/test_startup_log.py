@@ -87,4 +87,4 @@ def test_startup_log_reports_auth_and_cache_state():
     )
 
     assert "Autenticazione in ingresso: ATTIVA" in logger.text
-    assert "Cache risposte: attiva (ttl=60s, max=8)" in logger.text
+    assert "Cache risposte: attiva (policy=deterministic, ttl=60s, max=8)" in logger.text

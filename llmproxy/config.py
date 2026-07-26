@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
+from .cache import normalize_policy
+
 try:  # Python 3.11+
     import tomllib as _toml
 except ModuleNotFoundError:  # Python 3.9/3.10 fallback
@@ -164,9 +166,12 @@ class Settings:
     embeddings_input_type: str = ""
 
     # Response cache (non-streaming replies only). Disabled by default.
+    # ``cache_policy`` decides which requests are eligible once enabled; see
+    # llmproxy.cache.POLICIES.
     cache_enabled: bool = False
     cache_ttl: float = 300.0
     cache_max_size: int = 512
+    cache_policy: str = "deterministic"
 
     # Configured upstream providers (from providers.toml, or a single provider
     # synthesized from the NVIDIA_* env vars as a backward-compatible fallback).
@@ -280,5 +285,6 @@ def load_settings():
         in ("1", "true", "yes", "on"),
         cache_ttl=float(os.environ.get("CACHE_TTL", "300")),
         cache_max_size=int(os.environ.get("CACHE_MAX_SIZE", "512")),
+        cache_policy=normalize_policy(os.environ.get("CACHE_POLICY")),
         providers=providers,
     )

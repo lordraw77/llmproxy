@@ -75,4 +75,7 @@ def _cache_line(settings):
     """Describe the response-cache configuration in one line."""
     if not settings.cache_enabled:
         return "disattivata"
-    return f"attiva (ttl={int(settings.cache_ttl)}s, max={settings.cache_max_size})"
+    return (
+        f"attiva (policy={settings.cache_policy}, ttl={int(settings.cache_ttl)}s, "
+        f"max={settings.cache_max_size})"
+    )

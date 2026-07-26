@@ -1,10 +1,10 @@
 """In-process response cache for non-streaming upstream replies.
 
 A single thread-safe :class:`ResponseCache` per worker memoizes the parsed JSON
-body of deterministic, non-streaming upstream calls (chat/text completions and
-embeddings), keyed by a hash of the outbound payload. On a hit the proxy returns
-the stored body without touching the network, saving an upstream round-trip (and
-its token cost / latency).
+body of non-streaming upstream calls (chat/text completions and embeddings),
+keyed by a hash of the outbound payload. On a hit the proxy returns the stored
+body without touching the network, saving an upstream round-trip (and its token
+cost / latency).
 
 The cache is:
 
@@ -12,6 +12,31 @@ The cache is:
 - **TTL-bounded** — every entry expires ``CACHE_TTL`` seconds after it is stored.
 - **Size-bounded** — at most ``CACHE_MAX_SIZE`` entries; the least-recently-used
   entry is evicted when the cap is exceeded (classic LRU via ``OrderedDict``).
+- **Policy-bounded** — ``CACHE_POLICY`` decides *which* requests are eligible at
+  all (see :data:`POLICIES`). Replaying a completion produced with
+  ``temperature > 0`` hands the client the same "sampled" answer for the whole
+  TTL, which is a legitimate cost trade-off but must be opted into rather than
+  inherited from ``CACHE_ENABLED`` alone.
+
+Eligibility levels (``CACHE_POLICY``), from strictest to loosest:
+
+===================  ===========================================================
+``off``              Nothing is cached, even with ``CACHE_ENABLED=true``. Useful
+                     to keep the cache wired (and its counters visible) while
+                     bypassing it.
+``embeddings``       Only embeddings, whose determinism is a property of the
+                     model rather than of the request.
+``deterministic``    *(default)* Embeddings, plus completions that can only have
+                     one answer: an explicit ``seed``, or ``temperature == 0``
+                     with ``top_p == 1``.
+``all``              Every successful non-streaming reply, sampling parameters
+                     ignored. Maximum token savings, repeated answers within the
+                     TTL.
+===================  ===========================================================
+
+Ineligible requests are counted as ``skipped`` in :meth:`snapshot`, so a policy
+that never lets anything through is visible at ``/stats`` instead of looking
+like a cache that simply never hits.
 
 Like :mod:`llmproxy.metrics`, it lives entirely in memory with no persistence and
 is **per-worker**: under gunicorn each worker keeps its own cache, so the observed
@@ -26,6 +51,41 @@ import json
 import threading
 import time
 from collections import OrderedDict
+
+
+#: Eligibility levels accepted by ``CACHE_POLICY``, strictest first.
+POLICIES = ("off", "embeddings", "deterministic", "all")
+
+#: Level applied when ``CACHE_POLICY`` is unset or unrecognized.
+DEFAULT_POLICY = "deterministic"
+
+
+def normalize_policy(value):
+    """Return a valid policy name, falling back to :data:`DEFAULT_POLICY`.
+
+    Mirrors the rest of :mod:`llmproxy.config`: an unrecognized value degrades to
+    the safe default instead of failing start-up.
+    """
+    name = (value or "").strip().lower()
+    return name if name in POLICIES else DEFAULT_POLICY
+
+
+def is_deterministic(payload):
+    """Whether ``payload`` can only produce one answer, so replaying it is honest.
+
+    An explicit ``seed`` pins the sampler regardless of temperature. Otherwise the
+    request must disable sampling outright: greedy decoding (``temperature == 0``)
+    with an unrestricted nucleus (``top_p == 1``). Absent fields take the OpenAI
+    defaults (``temperature=1``, ``top_p=1``), i.e. *not* deterministic — the
+    common case of a client sending neither.
+    """
+    if payload.get("seed") is not None:
+        return True
+    temperature = payload.get("temperature")
+    top_p = payload.get("top_p")
+    if temperature is None:
+        return False
+    return float(temperature) == 0.0 and float(1 if top_p is None else top_p) == 1.0
 
 
 class CachedResponse:
@@ -58,7 +118,7 @@ class CachedResponse:
 class ResponseCache:
     """Thread-safe TTL + LRU cache of non-streaming upstream response bodies."""
 
-    def __init__(self, enabled=False, ttl=300.0, max_size=512):
+    def __init__(self, enabled=False, ttl=300.0, max_size=512, policy=DEFAULT_POLICY):
         """Build a cache.
 
         Args:
@@ -68,7 +128,10 @@ class ResponseCache:
                 cache (an entry would expire immediately).
             max_size: Maximum number of entries; the least-recently-used entry is
                 evicted past this cap. Non-positive disables the cache.
+            policy: Eligibility level (see :data:`POLICIES`). Unrecognized values
+                degrade to :data:`DEFAULT_POLICY`.
         """
+        self.policy = normalize_policy(policy)
         self._ttl = float(ttl)
         self._max_size = int(max_size)
         # A misconfiguration (ttl<=0 or max_size<=0) degrades gracefully to "off".
@@ -83,11 +146,35 @@ class ResponseCache:
         self.stores = 0
         self.evictions = 0    # dropped because the cache was full (LRU).
         self.expirations = 0  # dropped because the TTL elapsed.
+        self.skipped = 0      # never looked up: ineligible under the policy.
 
     @property
     def enabled(self):
         """Whether the cache is active (and configured with sane ttl/size)."""
         return self._enabled
+
+    def allows(self, namespace, payload):
+        """Whether ``payload`` is eligible for caching under the current policy.
+
+        Args:
+            namespace: The key space of the call, as passed to :meth:`make_key`
+                (``"embeddings"`` or a completion namespace such as ``"chat"``).
+            payload: The outbound payload, inspected for sampling parameters.
+
+        Returns:
+            True when the caller should consult and populate the cache. A False
+            for a policy reason (rather than because the cache is off) is counted
+            under ``skipped``.
+        """
+        if not self._enabled or self.policy == "off":
+            return False
+        if namespace == "embeddings" or self.policy == "all":
+            return True
+        if self.policy == "deterministic" and is_deterministic(payload):
+            return True
+        with self._lock:
+            self.skipped += 1
+        return False
 
     @staticmethod
     def make_key(namespace, payload):
@@ -168,6 +255,7 @@ class ResponseCache:
             hit_rate = (self.hits / lookups) if lookups else 0.0
             return {
                 "enabled": self._enabled,
+                "policy": self.policy,
                 "ttl_seconds": round(self._ttl, 1),
                 "max_size": self._max_size,
                 "entries": live,
@@ -176,5 +264,6 @@ class ResponseCache:
                 "stores": self.stores,
                 "evictions": self.evictions,
                 "expirations": self.expirations,
+                "skipped": self.skipped,
                 "hit_rate": round(hit_rate, 4),
             }
