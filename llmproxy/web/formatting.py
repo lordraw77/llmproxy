@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from flask import Response, jsonify
 
-from ..upstream.client import resp_json
+from ..providers import resp_json
 from ..upstream.sse import iter_nvidia_sse
 from .middleware import defer_request_metrics
 

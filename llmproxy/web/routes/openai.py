@@ -6,7 +6,7 @@ import time
 from flask import Blueprint, g, jsonify, request
 
 from ...domain.sampling import build_sampling_params
-from ...upstream.client import resp_json
+from ...providers import resp_json
 from ..container import deps
 from ..formatting import completion_json, completion_stream, model_entry, streaming_response
 

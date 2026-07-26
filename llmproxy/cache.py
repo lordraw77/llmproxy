@@ -93,7 +93,7 @@ class CachedResponse:
 
     Exposes the subset of the response interface the web layer consumes
     (``ok``, ``status_code``, ``raise_for_status``, ``json`` and the memoized
-    ``_llmproxy_json`` used by :func:`llmproxy.upstream.client.resp_json`), plus a
+    ``_llmproxy_json`` used by :func:`llmproxy.providers.base.resp_json`), plus a
     ``from_cache`` marker. Mirrors ``AggregatedResponse`` so route handlers treat a
     cache hit exactly like any other non-streaming upstream response.
     """

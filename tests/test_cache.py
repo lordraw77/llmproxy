@@ -217,7 +217,7 @@ def test_clear_drops_entries_but_keeps_counters():
 
 def test_cached_response_mimics_an_upstream_response():
     """Route handlers must treat a hit exactly like a real non-streaming reply."""
-    from llmproxy.upstream.client import resp_json
+    from llmproxy.providers import resp_json
 
     resp = CachedResponse({"id": "x"})
     assert resp.ok is True

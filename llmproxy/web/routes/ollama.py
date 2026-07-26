@@ -7,7 +7,7 @@ import json
 
 from flask import Blueprint, g, jsonify, request
 
-from ...upstream.client import resp_json
+from ...providers import resp_json
 from ..container import deps
 from ..formatting import completion_json, completion_stream, now_iso
 

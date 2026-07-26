@@ -3,7 +3,7 @@
 import requests
 from flask import g, jsonify
 
-from ..upstream.client import resp_json
+from ..providers import resp_json
 
 
 def register_error_handlers(app):
