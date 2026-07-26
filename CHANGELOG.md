@@ -138,6 +138,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   were stale whenever a `providers.toml` was in use — the root cause of two of
   the fixes above. They are construction inputs now; the registry is the only
   authority. The `NVIDIA_*` zero-config path is unchanged and covered by tests.
+- **The `upstream/client.py` shim is gone.** It only re-exported `resp_json` and
+  `AggregatedResponse` from the provider layer for pre-migration imports, and
+  every route still went through it. `upstream/` is left with the SSE parser,
+  its actual responsibility.
+- **`iter_nvidia_sse` and `handle_nvidia_error` are now `iter_openai_sse` and
+  `handle_upstream_error`.** Both are generic — every provider goes through them,
+  the native Anthropic and Gemini ones included — and the names advertised a
+  coupling the multi-provider migration had already removed.
+- **`ProviderConfig` is immutable for real.** `frozen=True` only blocked
+  rebinding; its `extra_headers` and `proxy` dicts stayed shared and writable.
+  Both are wrapped in a read-only mapping over a copy.
+- **`Settings.proxies` moved below the field list**, which it used to split in
+  two.
 
 ### Documentation
 

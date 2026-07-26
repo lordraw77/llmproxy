@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Process entrypoint for llmproxy.
 
-Ollama-compatible server that forwards requests to NVIDIA (OpenAI-compatible API).
+Multi-dialect server in front of any number of configured upstreams.
 
-This proxy exposes both the Ollama-native endpoints (``/api/*``) and the
-OpenAI-compatible endpoints (``/v1/*``), plus the llama.cpp-native
-``/completion`` endpoint, and translates each incoming request into a call to
-NVIDIA's OpenAI-compatible upstream. It supports streaming (SSE / NDJSON),
-transient-error retries with backoff, optional inbound API-key authentication,
-and per-request correlation logging.
+This proxy exposes the Ollama-native endpoints (``/api/*``), the
+OpenAI-compatible endpoints (``/v1/*``) and the llama.cpp-native ``/completion``
+endpoint, and routes each incoming request to the provider that serves the
+requested model — an OpenAI-compatible upstream, or a native Anthropic, Gemini or
+Azure one, whose formats are translated in both directions. It supports streaming
+(SSE / NDJSON), transient-error retries with backoff, optional inbound API-key
+authentication, a policy-gated response cache, and per-request correlation
+logging.
 
 The implementation lives in the ``llmproxy`` package (see the layered structure
 under ``llmproxy/``). This module only builds the WSGI application and provides

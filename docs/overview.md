@@ -158,12 +158,12 @@ web (Flask, dialects)  →  services  →  domain  ←  upstream (implements the
 
 | Layer | Responsibility | Depends on |
 |-------|----------------|------------|
-| **domain** | Pure rules: model resolution, sampling-option translation. No Flask/HTTP/env. | nothing |
-| **upstream** | The single network boundary to NVIDIA: connection pool, retries, telemetry, SSE parsing. | config, logging |
-| **services** | Builds upstream payloads and orchestrates calls. Speaks only the OpenAI format. | domain, upstream |
-| **web** | Translates each client dialect to/from the services; cross-cutting auth, logging, errors. | services, domain |
+| **domain** | Pure rules: sampling-option translation. No Flask/HTTP/env. | nothing |
+| **providers** | The network boundary to every upstream: connection pool, retries, telemetry, and the per-provider format translation. Model resolution lives in its registry. | config, logging |
+| **services** | Builds upstream payloads and orchestrates calls, cache included. Speaks only the OpenAI format. | domain, providers |
+| **web** | Translates each client dialect to/from the services; cross-cutting auth, logging, metrics, errors. | services, domain |
 
-Adding a new upstream provider means adding a class under `upstream/`; adding a
+Adding a new upstream provider means adding a class under `providers/`; adding a
 new client dialect means adding a blueprint under `web/routes/` — neither touches
 the domain nor the other dialects. Everything is wired once in `create_app()`,
 which makes the app straightforward to instantiate with a stubbed upstream in
@@ -204,7 +204,7 @@ tests.
 | Component | Purpose |
 |-----------|---------|
 | [Flask](https://flask.palletsprojects.com/) | HTTP server and routing |
-| [requests](https://requests.readthedocs.io/) | Upstream HTTP calls to NVIDIA |
+| [requests](https://requests.readthedocs.io/) | Upstream HTTP calls (one pooled session per provider) |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | Loads `.env` configuration |
 | [gunicorn](https://gunicorn.org/) | Production WSGI server (Docker image) |
 | Python 3.12 | Runtime (per the Docker image) |
