@@ -5,12 +5,11 @@ Adapts the upstream OpenAI responses into Ollama's NDJSON / JSON dialect.
 
 import json
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from ...upstream.client import resp_json
-from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import first_content, log_stream_usage, now_iso
+from ..formatting import completion_json, completion_stream, now_iso
 
 bp = Blueprint("ollama", __name__)
 
@@ -79,6 +78,34 @@ def show():
     })
 
 
+def _ollama_framer(model, field, wrap):
+    """Return a builder for an Ollama terminal record.
+
+    ``/api/chat`` and ``/api/generate`` differ only in where the text goes:
+    ``message.content`` for the first, ``response`` for the second.
+
+    Args:
+        model: Exposed model name to echo back.
+        field: The body key carrying the text (``"message"`` or ``"response"``).
+        wrap: Wraps the text into that key's value.
+    """
+    def build(content, usage, done):
+        body = {
+            "model": model,
+            "created_at": now_iso(),
+            field: wrap(content),
+            "done": done,
+            "done_reason": "stop",
+        }
+        if usage:
+            # Ollama's own names for the token counts.
+            body["prompt_eval_count"] = usage.get("prompt_tokens")
+            body["eval_count"] = usage.get("completion_tokens")
+        return body
+
+    return build
+
+
 @bp.route("/api/chat", methods=["POST"])
 def chat():
     """Ollama ``/api/chat``: forward a chat request and return NDJSON (stream) or JSON."""
@@ -91,55 +118,22 @@ def chat():
     rid = getattr(g, "req_id", None)
 
     upstream = container.completions.chat(messages, stream, rid, options, model=model)
+    body_for = _ollama_framer(model, "message", lambda text: {"role": "assistant", "content": text})
 
     if not stream:
-        data = resp_json(upstream)
-        content = first_content(data)
-        usage = data.get("usage") or {}
-        result = {
-            "model": model,
-            "created_at": now_iso(),
-            "message": {"role": "assistant", "content": content},
-            "done": True,
-            "done_reason": "stop",
-        }
-        if usage:
-            result["prompt_eval_count"] = usage.get("prompt_tokens")
-            result["eval_count"] = usage.get("completion_tokens")
-        return jsonify(result)
+        return completion_json(upstream, lambda content, usage: body_for(content, usage, done=True))
 
-    logger = container.logger
-    metrics = container.metrics
-
-    def generate():
-        """Yield the upstream stream re-framed as Ollama NDJSON chat chunks, then a final done record."""
-        # Constant framing computed once: inside the per-token loop we serialize
-        # only the content (json.dumps(piece)), avoiding a dict+dumps per chunk.
-        created_at = now_iso()
-        prefix = '{"model": %s, "created_at": %s, "message": {"role": "assistant", "content": ' % (
-            json.dumps(model), json.dumps(created_at),
-        )
-        suffix = '}, "done": false}\n'
-        usage = {}
-        try:
-            for piece in iter_nvidia_sse(upstream, usage):
-                yield prefix + json.dumps(piece) + suffix
-            log_stream_usage(logger, metrics, rid, usage)
-            done = {
-                "model": model,
-                "created_at": now_iso(),
-                "message": {"role": "assistant", "content": ""},
-                "done": True,
-                "done_reason": "stop",
-            }
-            if usage:
-                done["prompt_eval_count"] = usage.get("prompt_tokens")
-                done["eval_count"] = usage.get("completion_tokens")
-            yield json.dumps(done) + "\n"
-        finally:
-            upstream.close()
-
-    return Response(generate(), mimetype="application/x-ndjson")
+    # Constant framing computed once: inside the per-token loop we serialize only
+    # the content (json.dumps(piece)), avoiding a dict+dumps per chunk.
+    prefix = '{"model": %s, "created_at": %s, "message": {"role": "assistant", "content": ' % (
+        json.dumps(model), json.dumps(now_iso()),
+    )
+    return completion_stream(
+        upstream, "application/x-ndjson",
+        lambda piece: prefix + json.dumps(piece) + '}, "done": false}\n',
+        lambda usage: json.dumps(body_for("", usage, done=True)) + "\n",
+        container.logger, container.metrics, rid,
+    )
 
 
 @bp.route("/api/generate", methods=["POST"])
@@ -160,53 +154,20 @@ def generate_endpoint():
     messages.append({"role": "user", "content": prompt})
 
     upstream = container.completions.chat(messages, stream, rid, options, model=model)
+    body_for = _ollama_framer(model, "response", lambda text: text)
 
     if not stream:
-        data = resp_json(upstream)
-        content = first_content(data)
-        usage = data.get("usage") or {}
-        result = {
-            "model": model,
-            "created_at": now_iso(),
-            "response": content,
-            "done": True,
-            "done_reason": "stop",
-        }
-        if usage:
-            result["prompt_eval_count"] = usage.get("prompt_tokens")
-            result["eval_count"] = usage.get("completion_tokens")
-        return jsonify(result)
+        return completion_json(upstream, lambda content, usage: body_for(content, usage, done=True))
 
-    logger = container.logger
-    metrics = container.metrics
-
-    def generate():
-        """Yield the upstream stream re-framed as Ollama NDJSON generate chunks, then a final done record."""
-        created_at = now_iso()
-        prefix = '{"model": %s, "created_at": %s, "response": ' % (
-            json.dumps(model), json.dumps(created_at),
-        )
-        suffix = ', "done": false}\n'
-        usage = {}
-        try:
-            for piece in iter_nvidia_sse(upstream, usage):
-                yield prefix + json.dumps(piece) + suffix
-            log_stream_usage(logger, metrics, rid, usage)
-            done = {
-                "model": model,
-                "created_at": now_iso(),
-                "response": "",
-                "done": True,
-                "done_reason": "stop",
-            }
-            if usage:
-                done["prompt_eval_count"] = usage.get("prompt_tokens")
-                done["eval_count"] = usage.get("completion_tokens")
-            yield json.dumps(done) + "\n"
-        finally:
-            upstream.close()
-
-    return Response(generate(), mimetype="application/x-ndjson")
+    prefix = '{"model": %s, "created_at": %s, "response": ' % (
+        json.dumps(model), json.dumps(now_iso()),
+    )
+    return completion_stream(
+        upstream, "application/x-ndjson",
+        lambda piece: prefix + json.dumps(piece) + ', "done": false}\n',
+        lambda usage: json.dumps(body_for("", usage, done=True)) + "\n",
+        container.logger, container.metrics, rid,
+    )
 
 
 @bp.route("/api/embeddings", methods=["POST"])

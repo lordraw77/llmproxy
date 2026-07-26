@@ -1,15 +1,12 @@
 """llama.cpp-native endpoints (``/props`` and ``/completion``)."""
 
 import json
-import time
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from ...domain.sampling import build_sampling_params
-from ...upstream.client import resp_json
-from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import first_content, log_stream_usage
+from ..formatting import completion_json, completion_stream
 
 bp = Blueprint("llamacpp", __name__)
 
@@ -44,10 +41,7 @@ def llama_completion():
     upstream = container.completions.chat(messages, stream, rid, options, model=model)
 
     if not stream:
-        data = resp_json(upstream)
-        content = first_content(data)
-        usage = data.get("usage") or {}
-        return jsonify({
+        return completion_json(upstream, lambda content, usage: {
             "content": content,
             "model": model,
             "prompt": prompt,
@@ -57,27 +51,15 @@ def llama_completion():
             "tokens_evaluated": usage.get("prompt_tokens", 0),
         })
 
-    logger = container.logger
-    metrics = container.metrics
+    def chunk(piece):
+        return "data: " + json.dumps({"content": piece, "model": model, "stop": False}) + "\n\n"
 
-    def generate():
-        """Yield the upstream stream re-framed as llama.cpp SSE events, then a final stop event."""
-        usage = {}
-        try:
-            for piece in iter_nvidia_sse(upstream, usage):
-                yield "data: " + json.dumps({
-                    "content": piece,
-                    "model": model,
-                    "stop": False,
-                }) + "\n\n"
-            log_stream_usage(logger, metrics, rid, usage)
-            yield "data: " + json.dumps({
-                "content": "",
-                "model": model,
-                "stop": True,
-                "stopped_eos": True,
-            }) + "\n\n"
-        finally:
-            upstream.close()
+    def done(_usage):
+        return "data: " + json.dumps({
+            "content": "", "model": model, "stop": True, "stopped_eos": True,
+        }) + "\n\n"
 
-    return Response(generate(), mimetype="text/event-stream")
+    return completion_stream(
+        upstream, "text/event-stream", chunk, done,
+        container.logger, container.metrics, rid,
+    )

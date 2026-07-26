@@ -7,9 +7,8 @@ from flask import Blueprint, Response, g, jsonify, request
 
 from ...domain.sampling import build_sampling_params
 from ...upstream.client import resp_json
-from ...upstream.sse import iter_nvidia_sse
 from ..container import deps
-from ..formatting import first_content, log_stream_usage, model_entry
+from ..formatting import completion_json, completion_stream, model_entry
 
 bp = Blueprint("openai", __name__)
 
@@ -118,38 +117,25 @@ def v1_completions():
     upstream = container.completions.chat(messages, stream, rid, options, model=model)
 
     if not stream:
-        data = resp_json(upstream)
-        content = first_content(data)
-        usage = data.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        return jsonify({
+        return completion_json(upstream, lambda content, usage: {
             "id": "cmpl-llmproxy",
             "object": "text_completion",
             "created": int(time.time()),
             "model": model,
             "choices": [{"text": content, "index": 0, "logprobs": None, "finish_reason": "stop"}],
-            "usage": usage,
+            "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         })
 
-    logger = container.logger
-    metrics = container.metrics
+    def chunk(piece):
+        return "data: " + json.dumps({
+            "id": "cmpl-llmproxy",
+            "object": "text_completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{"text": piece, "index": 0, "logprobs": None, "finish_reason": None}],
+        }) + "\n\n"
 
-    def generate():
-        """Yield the upstream stream re-framed as OpenAI ``text_completion`` SSE events, then ``[DONE]``."""
-        usage = {}
-        try:
-            for piece in iter_nvidia_sse(upstream, usage):
-                yield "data: " + json.dumps({
-                    "id": "cmpl-llmproxy",
-                    "object": "text_completion",
-                    "created": int(time.time()),
-                    "model": model,
-                    "choices": [{"text": piece, "index": 0, "logprobs": None, "finish_reason": None}],
-                }) + "\n\n"
-            log_stream_usage(logger, metrics, rid, usage)
-            yield "data: [DONE]\n\n"
-        finally:
-            # Runs outside the request context (the client may also have hung up
-            # mid-stream): release the upstream connection back to the pool.
-            upstream.close()
-
-    return Response(generate(), mimetype="text/event-stream")
+    return completion_stream(
+        upstream, "text/event-stream", chunk, lambda _usage: "data: [DONE]\n\n",
+        container.logger, container.metrics, rid,
+    )
