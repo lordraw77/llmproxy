@@ -50,6 +50,10 @@ nothing here reaches the runtime image.
 | `tests/test_routing_errors.py` | The `ValueError` → `400` handler | Unknown models, embeddings asked of a chat-only provider, an empty catalogue — and that the handler does not swallow upstream `JSONDecodeError` |
 | `tests/test_model_name_in_stream.py` | `model` across the streaming routes | The re-framing routes report the exposed name; the `/v1/chat/completions` byte relay reports the native one (a documented limit) |
 | `tests/test_startup_log.py` | `banner.log_startup` | The start-up summary describes the registry, not the `NVIDIA_*` fallback fields |
+| `tests/test_config.py` | `load_settings` | The `NVIDIA_*` zero-config fallback, `providers.toml` precedence, `${ENV}` interpolation, and that `Settings` carries no model catalogue |
+| `tests/test_routing.py` | `CachedRouter` | Native-vs-exposed model naming, cache bypass on streams, namespace separation, only successful JSON replies stored |
+| `tests/test_model_metadata.py` | `owner_of` + discovery routes | `owned_by` / `details.family` name the serving provider, per model |
+| `tests/test_stats_dashboard.py` | The `/stats` template | Data shaping (ordering, uptime, hit rate), which cards render, and autoescaping |
 | `tests/test_p0_regressions.py` | The three 1.3.0 security/robustness fixes | See below |
 
 ### The regression tests
@@ -71,7 +75,9 @@ back. Each was verified to **fail** against the pre-fix code:
 `tests/conftest.py` provides the three building blocks:
 
 - `make_settings(**overrides)` — a `Settings` with safe defaults; override any
-  field by keyword.
+  field by keyword. It also accepts the shorthand `models=`, `embeddings_model=`
+  and `api_key=`, which describe the *default provider* rather than a `Settings`
+  field — the model catalogue belongs to the registry, not to `Settings`.
 - `make_provider_config(name, models=…, api_key=…)` — a `ProviderConfig` with the
   auth wrapping the config layer normally applies.
 - the `app_factory` / `client` fixtures — a fully wired Flask app and test client.

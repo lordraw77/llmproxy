@@ -88,6 +88,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `make test` / `make test-cov`; dev dependencies live in `requirements-dev.txt`
   and never enter the runtime image.
 
+### Internal
+
+- **The `/stats` dashboard is a Jinja template** (`web/templates/stats.html`)
+  instead of ~150 lines of HTML and CSS inside an f-string. Autoescaping now
+  makes the page safe by construction rather than by remembering to call
+  `html.escape` at every interpolation — which is what made the stored XSS
+  possible in the first place.
+- **The cached-routing sequence is shared.** Both application services carried
+  their own copy of "resolve provider, rewrite to the native model id, consult
+  the cache, store a successful reply"; it lives in
+  `services/routing.CachedRouter`, so the `CACHE_POLICY` decision happens at one
+  call site.
+- **The four completion routes share their skeleton.** `/api/chat`,
+  `/api/generate`, `/v1/completions` and `/completion` now supply only their
+  dialect framing to `completion_json()` / `completion_stream()`; the upstream
+  iteration, usage logging, and the `finally` that closes the upstream exist
+  once. Responses are unchanged, byte for byte.
+- **`Settings` no longer carries a second model catalogue.** `models`,
+  `default_model`, `embeddings_model`, `nvidia_api_base` and `nvidia_api_key`
+  were stale whenever a `providers.toml` was in use — the root cause of two of
+  the fixes above. They are construction inputs now; the registry is the only
+  authority. The `NVIDIA_*` zero-config path is unchanged and covered by tests.
+
 ### Documentation
 
 - **`model` in streaming chunks is a documented limit, not a bug.** Streaming
