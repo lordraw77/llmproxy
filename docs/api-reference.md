@@ -282,13 +282,24 @@ through to NVIDIA unchanged.
 `false`.
 
 **Non-streaming response:** the upstream OpenAI response JSON, with `model`
-rewritten to `NVIDIA_MODEL`. When `FORCE_UPSTREAM_STREAM` is enabled the response
-is instead re-assembled from the upstream SSE stream (same shape; `id` is
-`chatcmpl-llmproxy` and `finish_reason` is `stop`) — see
+rewritten to the **exposed** model name. When `FORCE_UPSTREAM_STREAM` is enabled
+the response is instead re-assembled from the upstream SSE stream (same shape;
+`id` is `chatcmpl-llmproxy` and `finish_reason` is `stop`) — see
 [Configuration](configuration.md#forcing-upstream-streaming).
 
 **Streaming response** (`text/event-stream`): the upstream SSE stream is relayed
 byte-for-byte to the client.
+
+> **Known limit — `model` in streaming chunks.** Because this endpoint is a byte
+> relay, the SSE chunks carry the provider's **native** model id, not the exposed
+> name. The same request returns `"model": "big-llama"` when non-streaming and
+> `"model": "meta/llama-3.3-70b"` in its streaming chunks. This is deliberate:
+> rewriting the field would mean parsing and re-serializing every chunk, paying a
+> per-token cost on the hot path to correct a field most clients read once from
+> their own request. **All the other streaming endpoints** (`/v1/completions`,
+> `/api/chat`, `/api/generate`) build their frames themselves and do report the
+> exposed name. If your client keys off `model` in the stream, prefer one of those
+> or read the name from `/v1/models`.
 
 ### `POST /v1/completions`
 

@@ -63,7 +63,13 @@ def v1_chat_completions():
         return jsonify(data)
 
     def relay():
-        """Relay the upstream SSE bytes to the client unchanged."""
+        """Relay the upstream SSE bytes to the client unchanged.
+
+        Unchanged includes ``model``: the chunks carry the provider-native id
+        while the non-streaming branch above reports the exposed name. Rewriting
+        it would mean parsing and re-serializing every chunk. Documented as a
+        known limit of the relay in ``docs/api-reference.md`` (F11).
+        """
         try:
             for chunk in upstream.iter_content(chunk_size=None):
                 if chunk:
