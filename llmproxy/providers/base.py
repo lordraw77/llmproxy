@@ -21,8 +21,30 @@ import time
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.utils import should_bypass_proxies
 
 from ..upstream.sse import iter_nvidia_sse
+
+
+def bypasses_proxy(url, no_proxy):
+    """Return whether ``url`` must be reached directly, per a ``NO_PROXY`` list.
+
+    ``requests`` honors ``NO_PROXY`` only for proxies it discovers in the
+    environment: once ``session.proxies`` carries an explicit ``http``/``https``
+    entry, ``select_proxy`` picks it for every URL and nothing downstream ever
+    consults the exclusion list — not even a ``no_proxy`` key placed inside that
+    same mapping. Setting ``HTTP_PROXY`` therefore used to send local providers
+    (an Ollama on ``127.0.0.1``) through the corporate egress proxy, which is the
+    opposite of what ``NO_PROXY=localhost,127.0.0.1`` asks for.
+
+    A provider talks to exactly one host, so the decision is made once, at
+    construction: either the session gets the proxy or it does not.
+    :func:`requests.utils.should_bypass_proxies` supplies the matching rules
+    (host suffixes, IP addresses, CIDR blocks).
+    """
+    if not no_proxy:
+        return False
+    return should_bypass_proxies(url, no_proxy=no_proxy)
 
 
 class AggregatedResponse:
@@ -122,7 +144,7 @@ class Provider:
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
         proxies = config.proxy or settings.proxies
-        if proxies:
+        if proxies and not bypasses_proxy(config.base_url, settings.no_proxy):
             self._session.proxies.update(proxies)
 
     # --- identity ---------------------------------------------------------

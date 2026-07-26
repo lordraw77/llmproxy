@@ -136,7 +136,9 @@ class Settings:
 
     # Outbound HTTP proxy for reaching the upstream (corporate egress proxy).
     # Empty = no explicit proxy (``requests`` still honors the ambient
-    # HTTP(S)_PROXY / NO_PROXY environment via ``trust_env``).
+    # HTTP(S)_PROXY / NO_PROXY environment via ``trust_env``). ``no_proxy`` is
+    # applied by us, per provider: see providers.base.bypasses_proxy for why
+    # ``requests`` cannot do it once the proxy is set on the session.
     http_proxy: str = ""
     https_proxy: str = ""
     no_proxy: str = ""

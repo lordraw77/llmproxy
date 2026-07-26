@@ -75,6 +75,20 @@ the container environment automatically — no change to the compose file is
 needed. Always keep `localhost,127.0.0.1` in `NO_PROXY` so the container's own
 health check is not routed through the proxy.
 
+`NO_PROXY` is matched against each provider's `base_url` when its session is
+built: a provider whose host is excluded is given no proxy at all and is reached
+directly. Host suffixes (`.internal.example.com`), bare hosts, IP addresses, CIDR
+blocks and `*` all work. The exclusion applies to a provider's own `proxy` entry
+too — a host listed in `NO_PROXY` is never proxied, whatever the source of the
+proxy setting.
+
+> This exclusion is applied by llmproxy, not by `requests`. `requests` honors
+> `NO_PROXY` only for proxies it discovers in the environment on its own; a proxy
+> set explicitly on a session — which is what `HTTP_PROXY`/`HTTPS_PROXY` produce
+> here — is used for every URL, and any `no_proxy` key in that mapping is
+> ignored. Up to and including 1.3.0 that made `NO_PROXY` inert for upstream
+> calls: setting an egress proxy sent even a provider on `127.0.0.1` through it.
+
 ## Forcing upstream streaming
 
 Non-streaming upstream requests (`stream: false`) are the main cause of
@@ -303,7 +317,7 @@ The two files have **different jobs** and are used together:
 | `FORCE_UPSTREAM_STREAM` | **.env** | Force-stream re-aggregation (global). |
 | `EMBEDDINGS_INPUT_TYPE` | **.env** | Default embeddings `input_type` (global). |
 | `UPSTREAM_TIMEOUT` | **.env** | **Default** read timeout; a provider's `timeout` overrides it. |
-| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | **.env** | **Default** egress proxy; a provider's `proxy` overrides it. |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | **.env** | **Default** egress proxy; a provider's `proxy` overrides it. `NO_PROXY` excludes hosts from **both**. |
 | `UPSTREAM_POOL_SIZE` / `THREADS`, `WEB_CONCURRENCY`, `GUNICORN_TIMEOUT` | **.env** | Pool / gunicorn tuning. |
 | `PROVIDERS_CONFIG` | **.env** | Path to the TOML itself. |
 | **API-key values** (`NVIDIA_API_KEY`, `ANTHROPIC_API_KEY`, …) | **.env** | Referenced from the TOML as `${ENV_VAR}` — never inline the value. |

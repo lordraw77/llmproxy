@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`NO_PROXY` is now honored for upstream calls.** It was read into the settings
+  and never used. `requests` applies `NO_PROXY` only to proxies it finds in the
+  environment itself: `HTTP_PROXY`/`HTTPS_PROXY` are installed explicitly on the
+  pooled session here, and an explicit session proxy is selected for every URL
+  regardless of the exclusion list. Setting an egress proxy therefore routed
+  *every* provider through it, including a local one on `127.0.0.1` — the case
+  the documentation explicitly told users to exclude. Each provider's `base_url`
+  is now matched against `NO_PROXY` when its session is built (host suffixes, IP
+  addresses, CIDR blocks, `*`), and an excluded host gets no proxy at all,
+  whether the proxy came from the environment or from a provider's own `proxy`
+  entry.
 - **Latency and in-flight metrics no longer ignore the duration of a stream.**
   Both were written when the response headers were emitted, which for a streaming
   route is before the first token exists: `latency_ms` measured the handler setup
