@@ -10,7 +10,7 @@ so an OpenAI-compatible endpoint needs no overrides at all.
 The contract every provider exposes to the rest of the app is uniform and
 OpenAI-shaped: :func:`resp_json` on the returned object yields an OpenAI
 ``chat.completion``/``embeddings`` dict, and a streaming response yields
-OpenAI-format SSE consumed by :func:`llmproxy.upstream.sse.iter_nvidia_sse`.
+OpenAI-format SSE consumed by :func:`llmproxy.upstream.sse.iter_openai_sse`.
 Native providers (Anthropic, Gemini) translate their own formats into this shape
 internally, which keeps the whole ``web/routes`` layer provider-agnostic.
 """
@@ -23,7 +23,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.utils import should_bypass_proxies
 
-from ..upstream.sse import iter_nvidia_sse
+from ..upstream.sse import iter_openai_sse
 
 
 def bypasses_proxy(url, no_proxy):
@@ -92,7 +92,7 @@ class TranslatedStream:
     Native providers hand this a generator of OpenAI ``chat.completion.chunk``
     dicts (built from their own event stream); it exposes the two read surfaces
     the web layer relies on: ``iter_lines`` (consumed by
-    :func:`~llmproxy.upstream.sse.iter_nvidia_sse` for re-framing/aggregation) and
+    :func:`~llmproxy.upstream.sse.iter_openai_sse` for re-framing/aggregation) and
     ``iter_content`` (the raw byte relay in the OpenAI ``/v1/chat/completions``
     route). OpenAI-compatible providers skip this entirely and return the raw
     ``requests.Response``.
@@ -362,9 +362,9 @@ class Provider:
         usage = {}
         meta = {}
         try:
-            parts = [piece for piece in iter_nvidia_sse(resp, usage, meta)]
+            parts = [piece for piece in iter_openai_sse(resp, usage, meta)]
         finally:
-            # iter_nvidia_sse stops at the [DONE] marker, so the body is not
+            # iter_openai_sse stops at the [DONE] marker, so the body is not
             # drained: without this the connection never returns to the pool.
             resp.close()
         content = "".join(parts)

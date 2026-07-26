@@ -1,6 +1,6 @@
 """Regression tests for F4 — streaming upstream responses are always closed.
 
-``iter_nvidia_sse`` stops at the ``[DONE]`` marker, so the upstream body is never
+``iter_openai_sse`` stops at the ``[DONE]`` marker, so the upstream body is never
 drained to EOF: unless the route generator closes it explicitly the connection is
 dropped instead of returning to the pool, and under repeated client aborts the
 pool starts logging ``Connection pool is full, discarding connection``.

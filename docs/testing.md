@@ -41,7 +41,7 @@ nothing here reaches the runtime image.
 | `tests/test_cache.py` | `llmproxy.cache.ResponseCache` | TTL expiry (with a frozen clock), LRU eviction and recency refresh, deep-copy isolation in both directions, key derivation, the counters `/stats` reports |
 | `tests/test_registry.py` | `ProviderRegistry` | Bare names with one provider vs. `provider:model` with two or more, aliases, collision detection, bare-native-id resolution when three providers serve the same model id, embeddings routing |
 | `tests/test_sampling.py` | `build_sampling_params` | OpenAI passthrough, the `num_predict` → `max_tokens` alias, unknown keys dropped, `temperature: 0` preserved |
-| `tests/test_sse.py` | `iter_nvidia_sse` | Delta accumulation, `[DONE]`, malformed chunks skipped, `usage` extraction, incremental reassembly of parallel tool calls |
+| `tests/test_sse.py` | `iter_openai_sse` | Delta accumulation, `[DONE]`, malformed chunks skipped, `usage` extraction, incremental reassembly of parallel tool calls |
 | `tests/test_cache_policy.py` | `CACHE_POLICY` eligibility | The four levels, the determinism predicate (`seed`, `temperature`, `top_p`), `skipped` counting, and the end-to-end effect through both services |
 | `tests/test_translate_gemini.py` | `providers/translate/gemini.py` | Block content → parts, `data:`/remote images, the tool round-trip (`functionCall` / `functionResponse` paired by name), role merging, and degradation on malformed input |
 | `tests/test_translate_anthropic.py` | `providers/translate/anthropic.py` | The same ground for the Messages API: `tool_use` / `tool_result` paired by `tool_use_id`, `image` sources, role merging, orphan tool results. **Shape-only — never run against the live API** |

@@ -3,7 +3,7 @@
 import json
 
 
-def iter_nvidia_sse(resp, usage_out=None, meta_out=None):
+def iter_openai_sse(resp, usage_out=None, meta_out=None):
     """Yield the delta text from an OpenAI-format SSE stream.
 
     If ``usage_out`` (a dict) is provided, the final ``usage`` object emitted by

@@ -64,7 +64,7 @@ Both streaming and non-streaming responses are supported:
   (`text/event-stream`), each terminated with the appropriate sentinel
   (`data: [DONE]`).
 
-Internally, `iter_nvidia_sse()` (in [`upstream/sse.py`](../llmproxy/upstream/sse.py))
+Internally, `iter_openai_sse()` (in [`upstream/sse.py`](../llmproxy/upstream/sse.py))
 parses the upstream SSE stream and yields the
 text of each content delta, which is then re-wrapped in the target format. It
 also requests `stream_options.include_usage` upstream, so the final token usage
@@ -108,25 +108,36 @@ llmproxy/
 ├── logging_setup.py             # TZFormatter + configure_logging()
 ├── metrics.py                   # MetricsCollector (per-worker) + process_info()
 ├── cache.py                     # ResponseCache (per-worker TTL+LRU) + CachedResponse
+├── banner.py                    # the ASCII banner and the start-up summary
 │
 ├── domain/                      # pure business rules (no I/O, no framework)
-│   ├── models.py                #   ModelRegistry — resolve / resolve_embeddings / has
 │   └── sampling.py              #   build_sampling_params — normalize sampling options
 │
-├── upstream/                    # infrastructure — the only code that hits the network
-│   ├── client.py                #   NvidiaUpstream — pool, timeout, retry/backoff, telemetry
-│   └── sse.py                   #   iter_nvidia_sse — parse upstream SSE deltas (+ usage)
+├── providers/                   # infrastructure — the only code that hits the network
+│   ├── base.py                  #   Provider — pool, timeout, retry/backoff, telemetry
+│   ├── factory.py               #   build_providers — ProviderConfig -> Provider instances
+│   ├── registry.py              #   ProviderRegistry — exposed name -> (provider, native id)
+│   ├── openai_compatible.py     #   the default dialect (NVIDIA, Groq, Ollama, …)
+│   ├── anthropic.py, gemini.py, azure.py    #   native upstreams
+│   └── translate/               #   request/response translation, pure and HTTP-free
+│       ├── gemini.py            #     OpenAI messages -> Gemini contents/parts
+│       └── anthropic.py         #     OpenAI messages -> Messages API blocks
 │
-├── services/                    # application layer — orchestrates domain + upstream
+├── upstream/                    # shared wire-format parsing
+│   └── sse.py                   #   iter_openai_sse — parse upstream SSE deltas (+ usage)
+│
+├── services/                    # application layer — orchestrates domain + providers
+│   ├── routing.py               #   CachedRouter — the cache lookup/post/store cycle
 │   ├── completions.py           #   CompletionService — chat() / passthrough()
 │   └── embeddings.py            #   EmbeddingService — embed() / resolve / input_type
 │
 └── web/                         # interface adapters — Flask + per-dialect framing
     ├── __init__.py              #   create_app() application factory (dependency wiring)
     ├── container.py             #   Container — explicit dependency bundle, via deps()
-    ├── middleware.py            #   correlation id, inbound auth, access logging
-    ├── errors.py                #   map upstream errors to JSON + status
-    ├── formatting.py            #   now_iso, model_entry, require_upstream_key, telemetry
+    ├── middleware.py            #   correlation id, inbound auth, access logging, metrics
+    ├── errors.py                #   map upstream and routing errors to JSON + status
+    ├── formatting.py            #   now_iso, model_entry, the two completion shapes
+    ├── templates/stats.html     #   the /stats dashboard (Jinja, autoescaped)
     └── routes/                  #   one blueprint per client dialect
         ├── ollama.py            #     /, /api/version, /api/tags, /api/show, /api/chat,
         │                        #        /api/generate, /api/embed, /api/embeddings

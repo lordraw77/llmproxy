@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from flask import Response, jsonify
 
 from ..providers import resp_json
-from ..upstream.sse import iter_nvidia_sse
+from ..upstream.sse import iter_openai_sse
 from .middleware import defer_request_metrics
 
 
@@ -85,7 +85,7 @@ def completion_stream(upstream, mimetype, frame_chunk, frame_done, logger, metri
     def generate():
         usage = {}
         try:
-            for piece in iter_nvidia_sse(upstream, usage):
+            for piece in iter_openai_sse(upstream, usage):
                 yield frame_chunk(piece)
             log_stream_usage(logger, metrics, rid, usage)
             tail = frame_done(usage)

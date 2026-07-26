@@ -30,7 +30,7 @@ def register_error_handlers(app):
         return jsonify({"error": {"message": str(err), "type": "invalid_request_error"}}), 400
 
     @app.errorhandler(requests.exceptions.RequestException)
-    def handle_nvidia_error(err):
+    def handle_upstream_error(err):
         """Propagate the provider error to the client (status + JSON body when available).
 
         Returns:
