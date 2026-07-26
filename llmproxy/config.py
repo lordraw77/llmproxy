@@ -10,6 +10,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import timezone
+from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
@@ -119,6 +120,26 @@ class ProviderConfig:
     api_version: str = ""
     max_tokens: int = 4096        # required by Anthropic; ignored by OpenAI-family
     proxy: dict = None            # per-provider proxies, else the global ones
+
+    def __post_init__(self):
+        """Make the two mapping fields read-only, so ``frozen`` means what it says.
+
+        ``frozen=True`` only blocks rebinding the attributes: ``extra_headers``
+        and ``proxy`` were plain dicts, shared with whoever built them and
+        mutable through the "immutable" config. Wrapping them keeps the read API
+        identical (both are only ever read — copied into request headers, or into
+        the session's proxy mapping) and turns a stray write into an error at the
+        line that makes it.
+
+        The config stays unhashable: the generated ``__hash__`` raises on a
+        mapping field, mapping proxies included. Nothing hashes a provider
+        config, and making it hashable would mean storing tuples of pairs and
+        rebuilding a mapping at every read.
+        """
+        for name in ("extra_headers", "proxy"):
+            value = getattr(self, name)
+            if isinstance(value, dict):
+                object.__setattr__(self, name, MappingProxyType(dict(value)))
 
 
 @dataclass(frozen=True)

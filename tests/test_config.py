@@ -201,6 +201,40 @@ def test_create_app_warns_about_the_unresolved_names(monkeypatch, unresolved, ex
         assert name in logger.warnings[0]
 
 
+# --- R12: frozen means frozen, mapping fields included ----------------------
+
+def test_the_mapping_fields_of_a_provider_config_are_read_only(env, tmp_path):
+    """`frozen=True` blocked rebinding only: the dicts behind it stayed writable."""
+    toml = tmp_path / "providers.toml"
+    toml.write_text(
+        '[[provider]]\nname = "a"\ntype = "anthropic"\napi_key = "k"\nmodels = ["m"]\n'
+        '[provider.proxy]\nhttps = "http://egress:3128"\n'
+    )
+    env.setenv("PROVIDERS_CONFIG", str(toml))
+
+    (provider,) = load_settings().providers
+
+    assert provider.extra_headers["anthropic-version"] == "2023-06-01"
+    assert provider.proxy["https"] == "http://egress:3128"
+    with pytest.raises(TypeError):
+        provider.extra_headers["x"] = "1"
+    with pytest.raises(TypeError):
+        provider.proxy["http"] = "1"
+
+
+def test_a_provider_config_does_not_share_the_dict_it_was_built_from():
+    from llmproxy.config import ProviderConfig
+
+    headers = {"x": "1"}
+    config = ProviderConfig(
+        name="a", type="openai_compatible", base_url="https://x.invalid",
+        auth_header="Authorization", auth_value="Bearer k", extra_headers=headers,
+    )
+    headers["x"] = "mutated"
+
+    assert config.extra_headers["x"] == "1"
+
+
 # --- the fields that did stay ----------------------------------------------
 
 def test_the_global_knobs_are_still_settings_fields(env):
