@@ -30,6 +30,13 @@ services:
     volumes:
       # Host providers.toml -> container path referenced by PROVIDERS_CONFIG.
       - ./providers.toml:/config/providers.toml:ro
+      # Audit trail (AUDIT_ENABLED): AUDIT_FILE defaults to logs/audit.jsonl
+      # inside the container, so without this bind mount the records live in the
+      # container layer and are lost when it is recreated. With several workers
+      # put {pid} in AUDIT_FILE — they append to one file but cannot coordinate
+      # rotation. The file holds conversations in clear text unless
+      # AUDIT_BODIES=none: protect the directory and give it a retention policy.
+      - ./logs:/app/logs
     # Keep the port on loopback behind a TLS-terminating reverse proxy; set
     # PROXY_API_KEY in .env for inbound auth.
     ports:

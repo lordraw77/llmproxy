@@ -1,20 +1,24 @@
 <!--
   Overview per Docker Hub — repository: lordraw/llmproxy
   Short description (max 100 char), da incollare nel campo dedicato:
-  "OpenAI/Ollama/llama.cpp-compatible proxy that relays local-LLM clients to NVIDIA's inference API."
+  "Ollama/OpenAI/llama.cpp-compatible proxy for NVIDIA, OpenAI, Azure, Anthropic and Gemini."
   Full description (max ~25.000 char): il contenuto qui sotto.
 -->
 
 # llmproxy
 
-**One proxy, three APIs.** `llmproxy` speaks the **Ollama**, **OpenAI** and
-**llama.cpp** HTTP protocols at the same time and relays every request to
-NVIDIA's OpenAI-compatible inference API. To your tools it *looks* like a local
-LLM server; the inference actually runs on NVIDIA infrastructure.
+**One proxy, three APIs, many providers.** `llmproxy` speaks the **Ollama**,
+**OpenAI** and **llama.cpp** HTTP protocols at the same time and relays every
+request to the provider that owns the requested model — any OpenAI-compatible
+endpoint (NVIDIA by default, plus OpenAI, Mistral, Groq, OpenRouter, vLLM, a
+local Ollama…), **Azure OpenAI**, **Anthropic** and **Google Gemini**, the last
+two translated natively to and from the OpenAI shape. To your tools it *looks*
+like a local LLM server; the inference runs wherever you configured it.
 
 Point Open WebUI, an IDE plugin, a chat frontend or an agent framework at
-llmproxy — no client change beyond the base URL — and serve responses from a
-hosted NVIDIA model.
+llmproxy — no client change beyond the base URL — and serve responses from any
+hosted model. With no configuration file at all, a single NVIDIA provider is
+built from the `NVIDIA_*` variables.
 
 - 🐙 Source & docs: **https://github.com/lordraw77/llmproxy**
 - 🐳 Image: **`lordraw/llmproxy`**
@@ -47,10 +51,16 @@ hosted NVIDIA model.
 - **Optional inbound auth** — protect the proxy with `PROXY_API_KEY`
   (`Authorization: Bearer` or `X-Api-Key`); `/` and `/health` stay open for
   health-checks.
+- **Audit trail** — optional (`AUDIT_ENABLED`): one structured record per
+  request — prompt, completion, provider and native model, sampling parameters,
+  token usage, retries, latency and time-to-first-token, and the conversation it
+  belongs to. Written to a rotating file by a background thread, so the request
+  never waits for it; under back-pressure records are dropped, never delayed.
 - **Observability** — per-request correlation IDs, structured logging,
   `/health` with an optional live upstream probe (`?upstream=1`), plus a live
-  **`/stats`** dashboard (and `/stats.json`) with request/latency/token metrics
-  and a process-manager view (PID, workers, memory, uptime).
+  **`/stats`** dashboard (and `/stats.json`) with request/latency/token metrics,
+  cache and audit counters, and a process-manager view (PID, workers, memory,
+  uptime).
 - **Clean architecture** — a small layered Python/Flask package (config · domain
   · upstream · services · web), no database, run under gunicorn.
 
@@ -58,8 +68,11 @@ hosted NVIDIA model.
 
 ## Quick start
 
-You need a valid **NVIDIA API key** (`nvapi-…`) from
-[build.nvidia.com](https://build.nvidia.com/).
+The zero-config path needs a valid **NVIDIA API key** (`nvapi-…`) from
+[build.nvidia.com](https://build.nvidia.com/). To serve several providers
+instead, mount a `providers.toml` and point `PROVIDERS_CONFIG` at it
+(`-v ./providers.toml:/config/providers.toml:ro`); see the
+[configuration guide](https://github.com/lordraw77/llmproxy/blob/main/docs/configuration.md).
 
 ### docker run
 
@@ -81,6 +94,9 @@ services:
     env_file: .env
     ports:
       - "11434:11434"
+    volumes:
+      # Only needed with AUDIT_ENABLED: keeps the audit trail on the host.
+      - ./logs:/app/logs
 ```
 
 ### Smoke test
@@ -133,12 +149,21 @@ All configuration is via environment variables.
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | _(empty)_ | Outbound egress proxy to reach the upstream (corporate proxy). Without it, a proxied host hangs until `UPSTREAM_TIMEOUT`. Keep `localhost,127.0.0.1` in `NO_PROXY`. |
 | `RETRY_MAX` | `2` | Retries beyond the first attempt on transient errors (`0` disables). |
 | `RETRY_BACKOFF` | `0.5` | Base of the exponential backoff (seconds). |
+| `AUDIT_ENABLED` | `false` | Write one structured record per request (prompt, reply, provider, parameters, tokens, timings, session) to `AUDIT_FILE`. Built and written by a background thread: it costs the request nothing. |
+| `AUDIT_FILE` | `logs/audit.jsonl` | Destination file; `{pid}` and `{date}` are expanded. **Mount the directory** or the records die with the container, and use `{pid}` with several workers — they can share a file but cannot coordinate its rotation. |
+| `AUDIT_FORMAT` | `jsonl` | `jsonl` (one record per line, for `tail`/`jq`) or `pretty` (indented). |
+| `AUDIT_BODIES` | `truncated` | Content recorded: `none` (accounting only), `truncated` (clipped to `AUDIT_MAX_CHARS`), `full`. Unless `none`, the file holds conversations **in clear text** — protect it and give it a retention policy. |
+| `AUDIT_MAX_CHARS` | `2000` | Character budget per captured text under `truncated`. |
+| `AUDIT_QUEUE_SIZE` | `10000` | Records that may wait for the writer. Past this they are dropped and counted at `/stats`, rather than making a request wait. |
+| `AUDIT_MAX_MB` / `AUDIT_BACKUPS` | `64` / `5` | Rotation: at most `AUDIT_MAX_MB × (AUDIT_BACKUPS + 1)` on disk. |
+| `AUDIT_SESSION_HEADER` | _(empty)_ | Header carrying your front-end's conversation id (e.g. `X-OpenWebUI-Chat-Id`), consulted before the built-in `X-Session-Id`/`X-Conversation-Id`/`X-Chat-Id`. Without one, the session is fingerprinted from the conversation's opening message. |
 | `LOG_LEVEL` | `INFO` | `DEBUG` also logs the payload sent upstream. |
-| `LOG_TZ` | `UTC` | IANA timezone for log timestamps (e.g. `Europe/Rome`). |
+| `LOG_TZ` | `TZ` env, else `UTC` | IANA timezone for log timestamps (e.g. `Europe/Rome`). |
 | `PORT` / `HOST` | `11434` / `0.0.0.0` | Bind address. |
 | `WEB_CONCURRENCY` | `2` | gunicorn workers. |
 | `THREADS` | `8` | Threads per worker (SSE-friendly). |
 | `GUNICORN_TIMEOUT` | `600` | gunicorn worker timeout (seconds). |
+| `UPSTREAM_POOL_SIZE` | value of `THREADS` | Pooled HTTP connections kept open towards each upstream. Below `THREADS`, concurrent calls queue for a free connection. |
 
 Minimal `.env`:
 
@@ -147,6 +172,7 @@ NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NVIDIA_MODELS=meta/llama-3.1-8b-instruct,meta/llama-3.2-11b-vision-instruct
 LOG_TZ=Europe/Rome
 # PROXY_API_KEY=change-me   # uncomment to require inbound auth
+# AUDIT_ENABLED=on          # uncomment to record every request (needs ./logs mounted)
 ```
 
 ---
@@ -169,12 +195,12 @@ the `Makefile`'s `PLATFORMS`).
 
 - `GET /health` — liveness plus basic config (`api_key_configured`, number of
   models, default model).
-- `GET /health?upstream=1` — also probes NVIDIA; returns `status: degraded`
-  (HTTP `503`) if the provider is unreachable.
+- `GET /health?upstream=1` — also probes every configured provider; returns
+  `status: degraded` (HTTP `503`) if one is unreachable.
 - `GET /stats` — self-contained, auto-refreshing **HTML dashboard** with live
-  statistics, metrics (requests, latency, tokens, upstream calls) and the
-  **process-manager** view (PID, worker pool, memory, uptime). Open it in a
-  browser at `http://<host>:11434/stats`.
+  statistics, metrics (requests, latency, tokens, upstream calls, cache and audit
+  counters) and the **process-manager** view (PID, worker pool, memory, uptime).
+  Open it in a browser at `http://<host>:11434/stats`.
 - `GET /stats.json` — the same data as JSON for scraping/scripting.
 
 > Metrics are in-memory **per gunicorn worker**: one response reflects the worker
@@ -193,6 +219,8 @@ curl http://localhost:11434/stats.json      # JSON snapshot
 ## Links
 
 - **GitHub (source, full docs, issues):** https://github.com/lordraw77/llmproxy
+- **Configuration reference:** https://github.com/lordraw77/llmproxy/blob/main/docs/configuration.md
+- **Audit trail:** https://github.com/lordraw77/llmproxy/blob/main/docs/audit.md
 - **NVIDIA API keys & models:** https://build.nvidia.com/
 
 ## License

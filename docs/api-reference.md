@@ -482,6 +482,16 @@ The same data as JSON, for scraping or scripting.
       "expirations": 13,
       "skipped": 22,
       "hit_rate": 0.3203
+    },
+    "audit": {
+      "enabled": true,
+      "file": "logs/audit.jsonl",
+      "format": "jsonl",
+      "bodies": "truncated",
+      "written": 126,
+      "dropped": 0,
+      "errors": 0,
+      "queued": 2
     }
   },
   "process": {
@@ -508,6 +518,18 @@ elapsed), `skipped` (requests the policy declared ineligible, so never looked up
 these do **not** count as misses) and the derived `hit_rate`
 (`hits / (hits + misses)`, `0`–`1`). See
 [Response caching](configuration.md#response-caching) for the behavior.
+
+The `metrics.audit` group appears only when the [audit trail](audit.md) is
+active (`AUDIT_ENABLED`); when it is off the key is `null`, since a disabled
+trail has nothing to report but three zeros and a filename nothing writes to. It
+echoes the effective configuration (`file` after `{pid}`/`{date}` expansion,
+`format`, `bodies`) and the writer's counters: `written` (records on disk),
+`dropped` (records discarded because the queue was full — the request is never
+made to wait, so a non-zero value here means raising `AUDIT_QUEUE_SIZE`),
+`errors` (records the writer could not serialize or write, typically a
+permission problem on the destination directory) and `queued` (records currently
+waiting for the writer thread). Like every other counter these are **per
+worker**: the file, however, is shared unless `AUDIT_FILE` contains `{pid}`.
 
 `latency_ms` measures the **full client-side duration**, streaming included: a
 streaming request is recorded when its last frame leaves the proxy, not when its

@@ -39,6 +39,7 @@ All configuration is provided through environment variables, typically via a
 | `AUDIT_BACKUPS` | `5` | No | Rotated audit files kept (`.1` … `.5`). Total disk used is at most `AUDIT_MAX_MB × (AUDIT_BACKUPS + 1)`. |
 | `AUDIT_SESSION_HEADER` | *(empty)* | No | Extra request header consulted first for the conversation id, before the built-in `X-Session-Id` / `X-Conversation-Id` / `X-Chat-Id` / `X-Request-Session`. Without any of them the session is fingerprinted from the conversation's opening message. |
 | `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
+| `UPSTREAM_POOL_SIZE` | value of `THREADS`, else `8` | No | Size of the pooled HTTP connections kept open towards each upstream. Size it on the threads that actually issue requests: below `THREADS`, concurrent calls queue for a free connection. |
 
 ## Example `.env`
 

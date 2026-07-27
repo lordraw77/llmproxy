@@ -29,6 +29,8 @@ services:
       - .env
     ports:
       - "${PORT:-11434}:${PORT:-11434}"
+    volumes:
+      - ./logs:/app/logs
 ```
 
 Start it:
@@ -45,17 +47,23 @@ Key properties:
   (see [Configuration](configuration.md)).
 - **Port mapping** — `${PORT}` controls both the container's listening port and
   the published host port. They are always kept in sync.
+- **`./logs:/app/logs`** — host directory for the [audit trail](audit.md), whose
+  default `AUDIT_FILE` (`logs/audit.jsonl`) is relative to the working directory
+  inside the container. All three compose files mount it; see
+  [Persisting the audit trail](#persisting-the-audit-trail) below.
 
 ### Multi-provider in Docker
 
 To serve several upstreams, mount a [`providers.toml`](configuration.md#multi-provider)
 into the container and point `PROVIDERS_CONFIG` at it. The bundled compose file
-ships both lines commented out — uncomment them:
+ships both lines commented out — uncomment them (the mount goes under the
+existing `volumes:` key, next to `./logs`):
 
 ```yaml
     environment:
       PROVIDERS_CONFIG: /config/providers.toml
     volumes:
+      - ./logs:/app/logs
       - ./providers.toml:/config/providers.toml:ro
 ```
 
@@ -99,7 +107,7 @@ docker run -d --name llmproxy -p 11434:11434 --env-file .env \
   lordraw/llmproxy:latest
 ```
 
-Pin a specific version in production (e.g. `lordraw/llmproxy:1.2.3`) rather than
+Pin a specific version in production (e.g. `lordraw/llmproxy:1.4.0`) rather than
 `latest`. To point Compose at the published image, replace `build: .` with
 `image: lordraw/llmproxy:latest`.
 
@@ -155,6 +163,27 @@ use but not hardened for high load.) For production you may also want to:
   process-manager view (PID, worker pool, memory, uptime). See
   [API Reference → `/stats`](api-reference.md#get-stats).
 
+### Persisting the audit trail
+
+The [audit trail](audit.md) (`AUDIT_ENABLED`) writes to `AUDIT_FILE`, by default
+the container-relative `logs/audit.jsonl`. Without the `./logs:/app/logs` mount
+the records live in the container's writable layer and disappear the next time it
+is recreated (`docker compose up -d --build`, an image upgrade, `down`). All
+three compose files therefore ship the mount. Two consequences in production:
+
+- **Give `AUDIT_FILE` a `{pid}`** when `WEB_CONCURRENCY > 1`
+  (e.g. `logs/audit-{pid}.jsonl`). Workers can append to a shared file, but they
+  cannot coordinate rotation, so they would fight over `AUDIT_MAX_MB`.
+- **Treat the directory as sensitive.** Unless `AUDIT_BODIES=none`, it holds
+  prompts and completions in clear text. Restrict it to the runtime user (the
+  image already `chown`s `/app/logs` to `appuser`), keep it off backups that
+  travel, and give it a retention policy — rotation caps the disk at
+  `AUDIT_MAX_MB × (AUDIT_BACKUPS + 1)` per file, it does not expire old content.
+
+Check `metrics.audit` at `/stats.json` after enabling it: a growing `written` is
+the trail working, a non-zero `dropped` means raising `AUDIT_QUEUE_SIZE`, and a
+non-zero `errors` is usually a permission problem on the mounted directory.
+
 ### Security
 
 llmproxy supports **optional inbound authentication**: set `PROXY_API_KEY` and
@@ -176,7 +205,9 @@ Therefore:
 
 llmproxy is stateless, so you can run multiple replicas behind a load balancer
 without any coordination. The practical limit is your upstream NVIDIA API rate
-limit and quota, not llmproxy itself.
+limit and quota, not llmproxy itself. (The audit trail does not change that — it
+is an append-only side effect, not shared state — but each replica writes its own
+file, so collecting them is a log-shipping job like any other.)
 
 Note that the `/stats` metrics are kept **in memory per gunicorn worker** (and
 per replica): each response reflects only the worker that served it. This is fine

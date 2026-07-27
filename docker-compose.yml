@@ -10,13 +10,14 @@ services:
     ports:
       - "${PORT:-11434}:${PORT:-11434}"
     volumes:
+      # Host directory for the audit trail (AUDIT_FILE, default logs/audit.jsonl).
       - ./logs:/app/logs
-    # Multi-provider: mount a providers.toml from the host and point llmproxy at
-    # it. Leave both lines commented to run in single-provider mode from the
-    # NVIDIA_* vars in .env. Generate the file first with:
-    #   docker compose run --rm --no-TTY llmproxy \
-    #     python -m llmproxy.scripts.env_to_toml - > providers.toml
+      # Multi-provider: mount a providers.toml from the host and point llmproxy
+      # at it with PROVIDERS_CONFIG below. Leave both lines commented to run in
+      # single-provider mode from the NVIDIA_* vars in .env. Generate the file
+      # first with:
+      #   docker compose run --rm --no-TTY llmproxy \
+      #     python -m llmproxy.scripts.env_to_toml - > providers.toml
+      #- ./providers.toml:/config/providers.toml:ro
     #environment:
     #  PROVIDERS_CONFIG: /config/providers.toml
-    #volumes:
-    #  - ./providers.toml:/config/providers.toml:ro

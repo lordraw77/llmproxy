@@ -189,6 +189,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `docs/api-reference.md` now states the asymmetry and how to work around it, and
   tests pin both halves.
 
+- **The audit trail is now documented everywhere it is configured, not only in
+  `docs/audit.md`.** `__version__` was still `1.3.0` while this release was
+  being cut; the two production compose files did not mount `./logs`, so an
+  audit file enabled in production lived in the container's writable layer and
+  disappeared on the next recreation; `docs/api-reference.md` described every
+  `/stats.json` group except `metrics.audit`; and the Docker Hub description
+  mentioned neither the trail nor any of its nine variables, while still
+  presenting the proxy as NVIDIA-only two releases after it became
+  multi-provider. All four are fixed, plus: `UPSTREAM_POOL_SIZE` gained a real
+  entry in the configuration table, `.env.example` gained the gunicorn tuning
+  variables the production compose files read from it, and the commented
+  multi-provider snippet in `docker-compose.yml` no longer introduces a second
+  `volumes:` key — uncommenting it used to silently drop the `./logs` mount.
+
 ## [1.3.0] - 2026-07-24
 
 ### Added
