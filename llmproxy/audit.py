@@ -362,7 +362,7 @@ class AuditEvent:
         opts = self._opts
         section = {
             "message_count": len(messages) if isinstance(messages, list) else None,
-            "input_chars": _input_chars(messages, prompt),
+            "input_chars": input_chars(messages, prompt),
         }
         if not opts.captures_bodies:
             return section
@@ -744,14 +744,45 @@ def _tokens(usage):
     }
 
 
-def _input_chars(messages, prompt):
+def content_chars(content):
+    """Characters of one message's ``content``, without materializing it.
+
+    ``len(str(content))`` was the old spelling, and on multimodal content — a
+    list of blocks — it built the ``repr`` of the whole structure just to measure
+    it. That is a full copy of every base64 image in the message, produced on the
+    hot path (this runs at INFO, i.e. always) and thrown away one line later:
+    ~185us and a transient megabyte for a prompt carrying a few images.
+
+    Walking the blocks instead costs no allocation, and counts the text that is
+    actually there rather than the punctuation of Python's repr around it.
+    """
+    if isinstance(content, str):
+        return len(content)
+    if content is None:
+        return 0
+    if isinstance(content, list):
+        total = 0
+        for block in content:
+            if isinstance(block, str):
+                total += len(block)
+            elif isinstance(block, dict):
+                # A text block carries "text"; an image block's payload is a URL
+                # or a base64 blob, whose length is not prompt text.
+                text = block.get("text")
+                if isinstance(text, str):
+                    total += len(text)
+        return total
+    return len(str(content))
+
+
+def input_chars(messages, prompt=None):
     """Total characters of the inbound prompt, whichever shape it arrived in."""
     if isinstance(messages, list):
-        return sum(len(str(m.get("content", ""))) for m in messages if isinstance(m, dict))
+        return sum(content_chars(m.get("content")) for m in messages if isinstance(m, dict))
     if isinstance(prompt, str):
         return len(prompt)
     if isinstance(prompt, list):
-        return sum(len(str(x)) for x in prompt)
+        return sum(content_chars(x) for x in prompt)
     return 0
 
 

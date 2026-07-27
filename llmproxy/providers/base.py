@@ -91,12 +91,13 @@ class TranslatedStream:
     """Wraps a native streaming response, re-emitting it as OpenAI-format SSE.
 
     Native providers hand this a generator of OpenAI ``chat.completion.chunk``
-    dicts (built from their own event stream); it exposes the two read surfaces
-    the web layer relies on: ``iter_lines`` (consumed by
-    :func:`~llmproxy.upstream.sse.iter_openai_sse` for re-framing/aggregation) and
-    ``iter_content`` (the raw byte relay in the OpenAI ``/v1/chat/completions``
-    route). OpenAI-compatible providers skip this entirely and return the raw
-    ``requests.Response``.
+    dicts (built from their own event stream); it exposes the read surfaces the
+    web layer relies on: ``iter_chunks`` (the decoded dicts, taken by
+    :func:`~llmproxy.upstream.sse.iter_openai_sse` for re-framing/aggregation),
+    ``iter_lines`` (the same content as SSE text, for anything that wants the
+    wire form) and ``iter_content`` (the raw byte relay in the OpenAI
+    ``/v1/chat/completions`` route). OpenAI-compatible providers skip this
+    entirely and return the raw ``requests.Response``.
     """
 
     def __init__(self, chunks, raw=None):
@@ -104,6 +105,15 @@ class TranslatedStream:
         self._raw = raw
         self.status_code = 200
         self.ok = True
+
+    def iter_chunks(self):
+        """Yield the chunk dicts as they are, for consumers that parse anyway.
+
+        The chunks are *already* the structure ``iter_openai_sse`` would rebuild;
+        serializing them here so it could parse them back was a per-token
+        ``dumps``/``loads`` pair spent to cross a function boundary.
+        """
+        return self._chunks
 
     def iter_lines(self, decode_unicode=True):
         for chunk in self._chunks:
@@ -265,10 +275,11 @@ class Provider:
 
         if logger.isEnabledFor(logging.INFO):
             if messages:
-                input_chars = sum(len(str(m.get("content", ""))) for m in messages)
+                input_chars = audit.input_chars(messages)
             else:
-                raw_input = payload.get("input") or payload.get("prompt") or ""
-                input_chars = len(raw_input) if isinstance(raw_input, str) else sum(len(str(x)) for x in raw_input)
+                input_chars = audit.input_chars(
+                    None, payload.get("input") or payload.get("prompt") or "",
+                )
             logger.info(
                 "[%s] -> %s request | path=%s model=%s stream=%s%s messages=%d input_chars=%d",
                 rid, self.name, path, model, upstream_stream,
@@ -333,8 +344,12 @@ class Provider:
         )
 
         if not resp.ok:
-            logger.warning("[%s] <- %s error body: %s", rid, self.name, resp.text[:1000])
-            event.upstream_rejected(resp.status_code, resp.text[:1000])
+            # Decoded once: ``Response.text`` is a property that re-decodes the
+            # whole body on every access, so reading it twice to clip it twice
+            # decoded a (possibly large) error body twice to keep 1000 chars.
+            error_body = resp.text[:1000]
+            logger.warning("[%s] <- %s error body: %s", rid, self.name, error_body)
+            event.upstream_rejected(resp.status_code, error_body)
             resp.raise_for_status()
 
         # Streaming upstream: normalize to OpenAI SSE, aggregating if requested.

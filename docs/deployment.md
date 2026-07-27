@@ -107,7 +107,7 @@ docker run -d --name llmproxy -p 11434:11434 --env-file .env \
   lordraw/llmproxy:latest
 ```
 
-Pin a specific version in production (e.g. `lordraw/llmproxy:1.4.0`) rather than
+Pin a specific version in production (e.g. `lordraw/llmproxy:1.4.1`) rather than
 `latest`. To point Compose at the published image, replace `build: .` with
 `image: lordraw/llmproxy:latest`.
 
@@ -208,6 +208,20 @@ without any coordination. The practical limit is your upstream NVIDIA API rate
 limit and quota, not llmproxy itself. (The audit trail does not change that — it
 is an append-only side effect, not shared state — but each replica writes its own
 file, so collecting them is a log-shipping job like any other.)
+
+**Before adding replicas, check the ceiling inside the one you have.**
+`WEB_CONCURRENCY × THREADS` caps how many requests a container serves at once —
+64 with the defaults (`2 × 32`), and only 16 before 1.4.1. Past that, requests
+queue in the socket backlog no matter how idle the host looks, which reads as
+"the proxy is slow" when it is simply full. Raising `THREADS` is nearly free for
+this workload: a request spends its life blocked on the upstream, not on the CPU.
+See [Concurrency and pool sizing](configuration.md#concurrency-and-pool-sizing)
+for how to size it, and why `UPSTREAM_POOL_SIZE` must follow.
+
+A single container with more threads is also cheaper than more replicas: the
+[response cache](configuration.md#response-caching) is per-worker, so spreading
+the same traffic over more processes splits the cache and lowers the hit rate on
+each.
 
 Note that the `/stats` metrics are kept **in memory per gunicorn worker** (and
 per replica): each response reflects only the worker that served it. This is fine

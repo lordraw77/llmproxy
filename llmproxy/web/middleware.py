@@ -192,16 +192,24 @@ def register_middleware(app):
             g.metrics_tracked = True
             container.metrics.begin()
 
-        body = request.get_json(silent=True) or {}
-        _start_audit(container, body)
-
+        # Authentication precedes body parsing. The other order made every
+        # unauthenticated request pay for a full JSON parse of an
+        # attacker-controlled document — plus the session fingerprint hashed over
+        # it — before being told "no", which hands an unauthenticated caller the
+        # worker's CPU. The rejection is still audited, with an empty body: who
+        # was refused, from where, on which key is the whole point of that record,
+        # and a refused caller has not earned a parse of what they sent.
         unauthorized = _check_auth(container.settings)
         if unauthorized is not None:
+            _start_audit(container, {})
             logger.warning(
                 "[%s] --> %s %s | client=%s AUTH FAILED",
                 g.req_id, request.method, request.path, request.remote_addr,
             )
             return unauthorized
+
+        body = request.get_json(silent=True) or {}
+        _start_audit(container, body)
 
         logger.info(
             "[%s] --> %s %s | client=%s model=%s stream=%s",
@@ -226,15 +234,19 @@ def register_middleware(app):
             return response
         if hasattr(g, "req_start"):
             elapsed_ms = (time.perf_counter() - g.req_start) * 1000
-            deps().logger.info(
+            # One container lookup: ``deps()`` dereferences the ``current_app``
+            # proxy and walks the app-context stack on every call, and this hook
+            # ran it three times per request.
+            container = deps()
+            container.logger.info(
                 "[%s] <-- %s %s | status=%s duration=%.0fms",
                 getattr(g, "req_id", "--------"), request.method, request.path,
                 response.status_code, elapsed_ms,
             )
             if getattr(g, "metrics_tracked", False):
-                deps().metrics.record(_metrics_label(), response.status_code, elapsed_ms)
+                container.metrics.record(_metrics_label(), response.status_code, elapsed_ms)
             submit_audit(
-                deps().audit, getattr(g, "audit", audit.NO_AUDIT),
+                container.audit, getattr(g, "audit", audit.NO_AUDIT),
                 response.status_code, elapsed_ms,
             )
         return response

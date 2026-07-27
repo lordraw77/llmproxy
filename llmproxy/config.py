@@ -189,6 +189,14 @@ class Settings:
     proxy_api_key: str = ""
     auth_exempt_paths: frozenset = field(default_factory=lambda: frozenset({"/", "/health"}))
 
+    # Largest inbound body accepted, in bytes (``MAX_REQUEST_MB``). Werkzeug
+    # buffers a request body in memory before any route sees it, so without a cap
+    # the ceiling on a worker's memory is whatever a caller chooses to send —
+    # with N threads accepting concurrently, N times that. The default is sized
+    # to pass a genuine multimodal prompt (several base64 images) and refuse a
+    # body that can only be a mistake or an attack. 0 disables the limit.
+    max_request_bytes: int = 32 * 1024 * 1024
+
     # Embeddings.
     embeddings_input_type: str = ""
 
@@ -325,6 +333,7 @@ def load_settings():
         retry_max=int(os.environ.get("RETRY_MAX", "2")),
         retry_backoff=float(os.environ.get("RETRY_BACKOFF", "0.5")),
         proxy_api_key=os.environ.get("PROXY_API_KEY", "").strip(),
+        max_request_bytes=int(float(os.environ.get("MAX_REQUEST_MB", "32")) * 1024 * 1024),
         embeddings_input_type=os.environ.get("EMBEDDINGS_INPUT_TYPE", "query").strip(),
         cache_enabled=_flag("CACHE_ENABLED"),
         cache_ttl=float(os.environ.get("CACHE_TTL", "300")),

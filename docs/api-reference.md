@@ -574,6 +574,7 @@ passed through unchanged.
 |-----------|--------|------|
 | Missing/invalid inbound key (when `PROXY_API_KEY` is set) | `401` | `{"error": {"message": "unauthorized", "type": "authentication_error"}}` |
 | Requested model/capability not served by any provider | `400` | `{"error": {"message": "<reason>", "type": "invalid_request_error"}}` |
+| Request body larger than `MAX_REQUEST_MB` | `413` | `{"error": {"message": "request body too large (limit <n> bytes)", "type": "invalid_request_error", "code": "request_too_large", "request_id": "<rid>"}}` |
 | Provider credential not set | **upstream status** (usually `401`) | The provider's own JSON error body, forwarded verbatim |
 | Upstream provider returned an error | **upstream status** | The provider's JSON error body, **forwarded verbatim** |
 | Upstream returned a non-JSON error | upstream status | `{"error": {"message": "<raw text>", "type": "upstream_error", "code": <status>}}` |

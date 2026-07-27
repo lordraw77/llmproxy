@@ -140,6 +140,7 @@ All configuration is via environment variables.
 | `NVIDIA_EMBEDDINGS_MODEL` | `nvidia/nv-embedqa-e5-v5` | Default model for embeddings endpoints. |
 | `EMBEDDINGS_INPUT_TYPE` | `query` | `input_type` applied if the client omits it (`query`/`passage`; empty to skip). |
 | `PROXY_API_KEY` | _(empty)_ | If set, requires this key on inbound requests. Empty = open proxy. |
+| `MAX_REQUEST_MB` | `32` | Largest inbound request body accepted, in MiB (buffered in memory before routing). `0` removes the limit; over it the proxy answers `413` in the OpenAI error format. |
 | `UPSTREAM_TIMEOUT` | `120` | Upstream read timeout (seconds). Raise it for slow non-streaming models. |
 | `FORCE_UPSTREAM_STREAM` | `false` | Always stream towards the upstream on `/chat/completions` (transparent to the caller). Avoids read timeouts on slow/non-streaming requests. `1`/`true`/`yes`/`on`. |
 | `CACHE_ENABLED` | `false` | Enable the response cache for non-streaming replies (`1`/`true`/`yes`/`on`). Identical requests skip the upstream call. Stats at `/stats`. |
@@ -161,9 +162,9 @@ All configuration is via environment variables.
 | `LOG_TZ` | `TZ` env, else `UTC` | IANA timezone for log timestamps (e.g. `Europe/Rome`). |
 | `PORT` / `HOST` | `11434` / `0.0.0.0` | Bind address. |
 | `WEB_CONCURRENCY` | `2` | gunicorn workers. |
-| `THREADS` | `8` | Threads per worker (SSE-friendly). |
+| `THREADS` | `32` | Threads per worker (SSE-friendly). `WEB_CONCURRENCY × THREADS` is a hard ceiling on requests in flight; size it on the concurrency you need, not on the core count (a request spends its life blocked on the upstream, not on the CPU). |
 | `GUNICORN_TIMEOUT` | `600` | gunicorn worker timeout (seconds). |
-| `UPSTREAM_POOL_SIZE` | value of `THREADS` | Pooled HTTP connections kept open towards each upstream. Below `THREADS`, concurrent calls queue for a free connection. |
+| `UPSTREAM_POOL_SIZE` | value of `THREADS` | Pooled HTTP connections kept open towards each upstream. Below `THREADS`, concurrent calls queue for a free connection and urllib3 discards the surplus, costing the next request a fresh TLS handshake. |
 
 Minimal `.env`:
 

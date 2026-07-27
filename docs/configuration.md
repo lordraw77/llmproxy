@@ -38,8 +38,9 @@ All configuration is provided through environment variables, typically via a
 | `AUDIT_MAX_MB` | `64` | No | Size at which the audit file rotates. A record is never split, so the file may exceed the cap by at most one record. |
 | `AUDIT_BACKUPS` | `5` | No | Rotated audit files kept (`.1` … `.5`). Total disk used is at most `AUDIT_MAX_MB × (AUDIT_BACKUPS + 1)`. |
 | `AUDIT_SESSION_HEADER` | *(empty)* | No | Extra request header consulted first for the conversation id, before the built-in `X-Session-Id` / `X-Conversation-Id` / `X-Chat-Id` / `X-Request-Session`. Without any of them the session is fingerprinted from the conversation's opening message. |
-| `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
-| `UPSTREAM_POOL_SIZE` | value of `THREADS`, else `8` | No | Size of the pooled HTTP connections kept open towards each upstream. Size it on the threads that actually issue requests: below `THREADS`, concurrent calls queue for a free connection. |
+| `MAX_REQUEST_MB` | `32` | No | Largest inbound request body accepted, in MiB. The body is buffered in memory before any route sees it, so this bounds what a single caller can make a worker hold — times the number of threads accepting at once. Raise it if you relay genuinely large multimodal prompts; `0` removes the limit (the pre-1.4.1 behavior). Over the limit the proxy answers `413` in the OpenAI error format. |
+| `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `32` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. **`WEB_CONCURRENCY × THREADS` is a hard ceiling on requests in flight** — see [Concurrency and pool sizing](#concurrency-and-pool-sizing). |
+| `UPSTREAM_POOL_SIZE` | value of `THREADS`, else `8` | No | Size of the pooled HTTP connections kept open towards each upstream. Size it on the threads that actually issue requests: below `THREADS`, concurrent calls queue for a free connection and urllib3 discards the surplus, costing the next request a fresh TLS handshake. |
 
 ## Example `.env`
 
@@ -154,7 +155,7 @@ How it works:
   cap is exceeded the least-recently-used entry is evicted (classic LRU).
 - **Observability** — hit/miss counts, hit rate, live entry count, stores,
   evictions, expirations and policy `skipped` counts are reported under `metrics.cache` at `/stats.json`
-  and on the `/stats` dashboard. See [Statistics & metrics](api-reference.md#statistics).
+  and on the `/stats` dashboard. See [Statistics & metrics](api-reference.md#get-stats).
 
 > **Per-worker, in-memory.** Like the metrics, the cache lives in each worker
 > process and is **not shared** across gunicorn workers or persisted to disk. With
@@ -438,6 +439,54 @@ docker run -d -p 11434:11434 --env-file .env \
   -e PROVIDERS_CONFIG=/config/providers.toml \
   lordraw/llmproxy:latest
 ```
+
+## Concurrency and pool sizing
+
+Three settings decide how many requests the proxy can serve at once, and they
+have to be sized together.
+
+```
+WEB_CONCURRENCY × THREADS  =  requests in flight (hard ceiling)
+UPSTREAM_POOL_SIZE         ≥  THREADS
+```
+
+**`WEB_CONCURRENCY × THREADS` is a ceiling, not a target.** Request number
+`N+1` waits in the socket backlog until a thread frees up, however idle the
+machine looks. The defaults (`2 × 32`) allow 64 concurrent requests.
+
+Size `THREADS` on the concurrency you need, **not on the core count** — the rule
+of thumb for CPU-bound servers does not apply here. A completion holds its thread
+blocked reading from the upstream for as long as generation takes (tens of
+seconds for a long answer), using essentially no CPU while it waits. The threads
+cost memory, not processor: a proxy fronting slow models needs many more of them
+than it has cores.
+
+To size it, multiply the concurrent clients you expect by nothing at all — one
+in-flight request is one thread — and leave headroom:
+
+| Workload | `WEB_CONCURRENCY` | `THREADS` |
+|----------|-------------------|-----------|
+| Personal / a few clients | `2` | `8` |
+| Team, interactive chat (default) | `2` | `32` |
+| Many concurrent streams, slow models | `4` | `64` |
+
+**`UPSTREAM_POOL_SIZE` must not be smaller than `THREADS`.** It defaults to
+`THREADS`, so it grows with it automatically and you normally do not set it. If
+you do pin it lower, the threads above the limit find no free pooled connection:
+urllib3 discards the surplus rather than queueing it, and every discard costs the
+next request a **complete TLS handshake** with the provider — a silent latency
+tax that looks like the upstream being slow. The symptom in the logs is urllib3's
+`Connection pool is full, discarding connection`.
+
+Memory scales with `WEB_CONCURRENCY` (each worker is a process with its own
+provider sessions, its own [response cache](#response-caching) and its own
+metrics) far more than with `THREADS`. Prefer more threads to more workers unless
+you are actually CPU-bound — and note that per-worker state is why `/stats`
+reports only the worker that answered.
+
+Finally, `MAX_REQUEST_MB` bounds the other half of the memory equation: an
+inbound body is buffered before any route sees it, so the worst case is roughly
+`THREADS × MAX_REQUEST_MB` per worker while bodies are being received.
 
 ## Notes and behavior
 

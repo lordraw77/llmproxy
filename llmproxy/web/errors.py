@@ -2,12 +2,28 @@
 
 import requests
 from flask import g, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from ..providers import resp_json
 
 
 def register_error_handlers(app):
     """Attach the upstream-error and routing-error handlers to ``app``."""
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_oversized_request(err):
+        """Answer a body over ``MAX_REQUEST_MB`` in the OpenAI error format.
+
+        Werkzeug's own 413 is an HTML page, which an OpenAI SDK surfaces to the
+        user as a JSON decode error rather than as the size limit it is.
+        """
+        rid = getattr(g, "req_id", "--------")
+        return jsonify({"error": {
+            "message": f"request body too large (limit {app.config['MAX_CONTENT_LENGTH']} bytes)",
+            "type": "invalid_request_error",
+            "code": "request_too_large",
+            "request_id": rid,
+        }}), 413
 
     @app.errorhandler(ValueError)
     def handle_routing_error(err):

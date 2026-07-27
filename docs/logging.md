@@ -70,7 +70,7 @@ Line by line:
 | Line | Meaning |
 |------|---------|
 | `-->` | **Incoming request**: method, path, client IP, requested model and `stream` flag. |
-| `-> NVIDIA request` | **Upstream call**: upstream path (`/chat/completions` or `/embeddings`), resolved model, stream flag, number of messages, total input characters. |
+| `-> NVIDIA request` | **Upstream call**: upstream path (`/chat/completions` or `/embeddings`), resolved model, stream flag, number of messages, total input characters. On multimodal messages `input_chars` counts the text blocks only (since 1.4.1): measuring a base64 image told you about the encoding, not about the prompt, and cost a full copy of it to find out. |
 | `<- NVIDIA response` | **Upstream status & latency**: the HTTP status NVIDIA returned and the time to first response. |
 | `telemetry` | **Token usage** from the upstream `usage` object (non-streaming only), with latency. |
 | `<--` | **End-to-end**: final client-facing status and total request duration. |

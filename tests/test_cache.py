@@ -137,24 +137,43 @@ def test_overwrite_marks_the_entry_most_recently_used():
 
 # --- isolation -------------------------------------------------------------
 
-def test_stored_value_is_isolated_from_later_caller_mutation():
+def test_stored_value_is_isolated_from_later_caller_top_level_mutation():
+    """``set`` hands back a body the caller then rewrites ``model`` on."""
     cache = make_cache()
-    payload = {"choices": [{"message": {"content": "hi"}}]}
+    payload = {"model": "native-id", "choices": [{"message": {"content": "hi"}}]}
     cache.set("k", payload)
-    payload["choices"][0]["message"]["content"] = "MUTATED"
-    assert cache.get("k")["choices"][0]["message"]["content"] == "hi"
+    payload["model"] = "exposed-name"
+    assert cache.get("k")["model"] == "native-id"
 
 
 def test_returned_value_is_isolated_from_the_store():
     """Route handlers overwrite ``model`` on the returned body; that must not stick."""
     cache = make_cache()
-    cache.set("k", {"model": "native-id", "nested": {"a": [1, 2]}})
+    cache.set("k", {"model": "native-id", "usage": {"total_tokens": 7}})
 
     first = cache.get("k")
     first["model"] = "exposed-name"
-    first["nested"]["a"].append(3)
 
-    assert cache.get("k") == {"model": "native-id", "nested": {"a": [1, 2]}}
+    assert cache.get("k")["model"] == "native-id"
+
+
+def test_isolation_is_top_level_only():
+    """The documented limit of the shallow copy, pinned so it cannot surprise.
+
+    ``get``/``set`` copy the top level and share everything below it, which is
+    what makes a hit cost microseconds instead of the milliseconds a deep copy of
+    a batch of embeddings costs. The invariant that buys it: a served body is
+    mutated at the top level only. This test exists so that a caller who starts
+    reaching into ``choices``/``data`` and writing there finds the contract
+    written down rather than a cache that quietly serves corrupted bodies.
+    """
+    cache = make_cache()
+    cache.set("k", {"nested": {"a": [1, 2]}})
+
+    served = cache.get("k")
+    served["nested"]["a"].append(3)
+
+    assert cache.get("k")["nested"]["a"] == [1, 2, 3]  # shared, by design
 
 
 # --- keys ------------------------------------------------------------------

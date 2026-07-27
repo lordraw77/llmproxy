@@ -45,6 +45,42 @@ not present a valid key.
 `/` and `/health` are always exempt. To disable auth, unset `PROXY_API_KEY` and
 restart.
 
+## `413 {"error": {..., "code": "request_too_large"}}`
+
+The request body exceeded `MAX_REQUEST_MB` (default `32`), so it was refused
+before any route saw it. The body is buffered in memory before routing, and the
+cap exists so that one caller cannot make a worker hold an unbounded amount of it
+— multiplied by every thread accepting at once.
+
+**Fix:** if the request is legitimate — a multimodal prompt carrying several
+large base64 images is the usual case — raise `MAX_REQUEST_MB` and restart.
+Setting it to `0` removes the limit entirely (the behaviour before 1.4.1).
+Sending images by URL rather than inline avoids the problem altogether, and is
+cheaper on every hop.
+
+## Requests queue under load / the proxy "goes slow" with many clients
+
+Response times climb as concurrency rises, the upstream is not the bottleneck,
+and the host looks idle. The proxy is **full**, not slow.
+
+`WEB_CONCURRENCY × THREADS` is a hard ceiling on requests in flight — 64 with the
+current defaults (`2 × 32`), and 16 in versions before 1.4.1. Request `N+1` waits
+in the socket backlog until a thread frees up, and since a completion holds its
+thread for the whole generation (tens of seconds for a long answer), a handful of
+slow streams is enough to fill it.
+
+**Check:** `in_flight` at `/stats` sitting at `THREADS` (per worker) is the
+symptom. Remember the figure is per-worker, so compare it against `THREADS`, not
+against the product.
+
+**Fix:** raise `THREADS`. It is nearly free for this workload — a request spends
+its life blocked reading from the upstream, using no CPU — so the usual "threads
+≈ cores" rule does not apply. Leave `UPSTREAM_POOL_SIZE` unset so it follows
+`THREADS`: pinned lower, urllib3 discards the connections above the pool size and
+every discard costs the next request a fresh TLS handshake with the provider
+(look for `Connection pool is full, discarding connection`). See
+[Concurrency and pool sizing](configuration.md#concurrency-and-pool-sizing).
+
 ## `502 {"error": {"message": ..., "type": "upstream_request_error"}}`
 
 llmproxy could not get any response from the provider. This covers connection
