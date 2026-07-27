@@ -171,8 +171,10 @@ if [[ $SKIP_TESTS -eq 1 ]]; then
     warn "test saltati (--skip-tests)"
 else
     step "Suite di test"
-    if make test ARGS=-q >/tmp/llmproxy-release-tests.log 2>&1; then
-        ok "$(grep -Eo '[0-9]+ passed[^,]*' /tmp/llmproxy-release-tests.log | tail -1 || echo 'tutti i test passano')"
+    # Nessun ARGS: pytest.ini imposta gia' -q, e un secondo -q diventa -qq, che
+    # sopprime anche la riga di riepilogo da cui leggiamo il conteggio.
+    if make test >/tmp/llmproxy-release-tests.log 2>&1; then
+        ok "$(grep -Eo '[0-9]+ passed.*' /tmp/llmproxy-release-tests.log | tail -1 || echo 'tutti i test passano')"
     else
         fail "la suite di test fallisce"
         tail -20 /tmp/llmproxy-release-tests.log | sed "s/^/      ${DIM}/;s/$/${RST}/"
