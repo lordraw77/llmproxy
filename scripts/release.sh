@@ -25,6 +25,7 @@
 #       --no-docker      non pubblica su Docker Hub
 #       --no-git         non pusha branch e tag su origin
 #       --remote NAME    remote git da usare (default: origin)
+#       --branch NAME    branch da cui e' lecito rilasciare (default: main)
 #   -h, --help           questo aiuto
 
 set -euo pipefail
@@ -35,7 +36,7 @@ RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; CYA=$'\033[36m'
 BLD=$'\033[1m'; DIM=$'\033[2m'; RST=$'\033[0m'
 
 DRY_RUN=0; ASSUME_YES=0; SKIP_TESTS=0; MULTI_ARCH=0
-DO_DOCKER=1; DO_GIT=1; REMOTE="origin"; VERSION_ARG=""
+DO_DOCKER=1; DO_GIT=1; REMOTE="origin"; VERSION_ARG=""; RELEASE_BRANCH=""
 
 FAILURES=0
 
@@ -48,7 +49,7 @@ fail()  { printf '  %s✗%s %s\n' "$RED" "$RST" "$*"; FAILURES=$((FAILURES + 1))
 info()  { printf '    %s%s%s\n' "$DIM" "$*" "$RST"; }
 die()   { printf '\n%sERRORE:%s %s\n' "$BLD$RED" "$RST" "$*" >&2; exit 1; }
 
-usage() { sed -n '3,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '3,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # Chiede conferma prima di un passo irreversibile. Con -y passa sempre.
 confirm() {
@@ -70,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --no-docker)    DO_DOCKER=0 ;;
         --no-git)       DO_GIT=0 ;;
         --remote)       REMOTE="${2:?--remote richiede un nome}"; shift ;;
+        --branch)       RELEASE_BRANCH="${2:?--branch richiede un nome}"; shift ;;
         -h|--help)      usage ;;
         -*)             die "opzione sconosciuta: $1 (usa --help)" ;;
         *)              VERSION_ARG="${1#v}" ;;
@@ -131,7 +133,24 @@ if [[ -n "$UNTRACKED" ]]; then
 fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-ok "branch corrente: $BRANCH"
+
+# Si rilascia dal branch di default (quello che origin/HEAD indica, di norma
+# main): il tag deve stare sulla storia che tutti vedono, non su un branch di
+# lavoro che magari non verra' mai mergiato. Con --branch si sceglie altro.
+if [[ -z "$RELEASE_BRANCH" ]]; then
+    RELEASE_BRANCH="$(git symbolic-ref -q --short "refs/remotes/${REMOTE}/HEAD" 2>/dev/null || true)"
+    RELEASE_BRANCH="${RELEASE_BRANCH#${REMOTE}/}"
+    RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
+fi
+
+if [[ "$BRANCH" == "$RELEASE_BRANCH" ]]; then
+    ok "branch corrente: $BRANCH"
+elif [[ "$BRANCH" == "HEAD" ]]; then
+    fail "HEAD e' staccato (detached): fai checkout di $RELEASE_BRANCH prima di rilasciare"
+else
+    fail "sei su '$BRANCH', ma le release si fanno da '$RELEASE_BRANCH'"
+    info "mergia su $RELEASE_BRANCH e riprova, oppure usa --branch $BRANCH se e' voluto"
+fi
 
 # Stato del tag: e' il punto in cui si e' gia' sbagliato una volta.
 TAG_ACTION="create"
