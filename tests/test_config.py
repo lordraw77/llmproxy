@@ -10,6 +10,9 @@ models that are not exposed). They are now construction inputs only.
 developer's real ``.env``.
 """
 
+import pathlib
+import re
+
 import pytest
 
 from llmproxy import config
@@ -18,14 +21,36 @@ from llmproxy.config import Settings, load_settings
 LEGACY_FIELDS = ("models", "default_model", "embeddings_model",
                  "nvidia_api_base", "nvidia_api_key")
 
-ENV_VARS = ("NVIDIA_MODEL", "NVIDIA_MODELS", "NVIDIA_API_KEY", "NVIDIA_API_BASE",
-            "NVIDIA_EMBEDDINGS_MODEL", "PROVIDERS_CONFIG", "CACHE_POLICY",
-            "PROXY_API_KEY", "HOST", "PORT")
+#: Every environment variable ``load_settings`` consults, cleared by the ``env``
+#: fixture below.
+#:
+#: Neutralizing ``load_dotenv`` is not enough to isolate these tests. It stops
+#: the ``.env`` *file* being read, but the same values are commonly exported in
+#: the shell of anyone who works on this project (and a CI runner brings its own
+#: ``HTTP_PROXY``/``TZ``), and ``load_settings`` reads ``os.environ``, not the
+#: file. A name missing from this list therefore makes the test that covers it
+#: pass or fail depending on whose machine runs it — which is how a release was
+#: once blocked by an exported ``UPSTREAM_TIMEOUT=300``.
+#:
+#: Kept complete by :func:`test_the_isolation_list_covers_every_variable_read`.
+ENV_VARS = (
+    "AUDIT_BACKUPS", "AUDIT_BODIES", "AUDIT_FILE", "AUDIT_FORMAT",
+    "AUDIT_MAX_CHARS", "AUDIT_MAX_MB", "AUDIT_QUEUE_SIZE", "AUDIT_SESSION_HEADER",
+    "CACHE_MAX_SIZE", "CACHE_POLICY", "CACHE_TTL",
+    "EMBEDDINGS_INPUT_TYPE", "HOST", "LOG_LEVEL", "LOG_TZ", "MAX_REQUEST_MB",
+    "NVIDIA_API_BASE", "NVIDIA_API_KEY", "NVIDIA_EMBEDDINGS_MODEL",
+    "NVIDIA_MODEL", "NVIDIA_MODELS", "PORT", "PROVIDERS_CONFIG", "PROXY_API_KEY",
+    "RETRY_BACKOFF", "RETRY_MAX", "THREADS", "TZ",
+    "UPSTREAM_POOL_SIZE", "UPSTREAM_TIMEOUT",
+    # Proxy vars are read in both spellings, so both have to go.
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+)
 
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    """An isolated environment: no ``.env``, no ambient ``NVIDIA_*``, no toml."""
+    """An isolated environment: no ``.env``, no ambient settings, no toml."""
     monkeypatch.setattr(config, "load_dotenv", lambda *a, **k: None)
     for name in ENV_VARS:
         monkeypatch.delenv(name, raising=False)
@@ -33,6 +58,29 @@ def env(monkeypatch, tmp_path):
     # regardless of the developer's working directory.
     monkeypatch.setenv("PROVIDERS_CONFIG", str(tmp_path / "absent.toml"))
     return monkeypatch
+
+
+def test_the_isolation_list_covers_every_variable_read():
+    """:data:`ENV_VARS` must not drift behind ``load_settings``.
+
+    The fixture isolates by name, so a setting added to ``config.py`` without
+    being added here silently keeps reading the ambient environment. The failure
+    that produces is the worst kind: the test covering that setting passes on a
+    clean machine and fails on the maintainer's, where the value is exported —
+    which reads as a flaky suite rather than as a gap in the fixture.
+
+    Deriving the list from the source rather than hand-checking it is the point:
+    this fails the moment a new ``os.environ`` read appears.
+    """
+    source = pathlib.Path(config.__file__).read_text(encoding="utf-8")
+    read = set(re.findall(
+        r'os\.environ(?:\.get)?\(\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']', source,
+    ))
+
+    assert read - set(ENV_VARS) == set(), (
+        "these variables are read by config.py but not cleared by the env "
+        "fixture, so these tests observe the ambient environment"
+    )
 
 
 # --- R7: one catalogue, in the registry ------------------------------------
