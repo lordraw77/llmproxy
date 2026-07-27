@@ -6,8 +6,11 @@ error handlers, and route blueprints. Keeping construction in one factory makes
 the dependency graph explicit and the app straightforward to instantiate in tests.
 """
 
+import atexit
+
 from flask import Flask
 
+from ..audit import open_trail
 from ..cache import ResponseCache
 from ..config import load_settings
 from ..logging_setup import configure_logging
@@ -42,13 +45,24 @@ def create_app(settings=None):
         max_size=settings.cache_max_size,
         policy=settings.cache_policy,
     )
+    # Started here (post-fork under gunicorn, so the writer thread belongs to the
+    # worker that will feed it) and drained at interpreter exit; the queue is
+    # flushed whenever it runs dry, so a hard kill loses at most what is in it.
+    audit = open_trail(settings, logger)
+    if audit.enabled:
+        atexit.register(audit.close)
+        logger.info(
+            "audit trail enabled | file=%s format=%s bodies=%s",
+            audit.path, audit.format, audit.options.bodies,
+        )
+
     registry = build_providers(settings, logger, metrics)
     completions = CompletionService(registry, cache=cache)
     embeddings = EmbeddingService(registry, settings.embeddings_input_type, cache=cache)
 
     app = Flask(__name__)
     Container(
-        settings, logger, registry, completions, embeddings, metrics, cache
+        settings, logger, registry, completions, embeddings, metrics, cache, audit
     ).attach(app)
 
     register_middleware(app)

@@ -90,6 +90,7 @@ flowchart LR
 | [Configuration](docs/configuration.md) | Environment variables and options |
 | [Migration](docs/migration.md) | Moving from env config to multi-provider `providers.toml` (local & Docker) |
 | [Logging & Telemetry](docs/logging.md) | Request/response logs, telemetry, and the configurable-timezone clock |
+| [Audit Trail](docs/audit.md) | The deferred, per-request audit file: prompts, replies, parameters, tokens, sessions |
 | [API Reference](docs/api-reference.md) | Every endpoint, with request/response examples |
 | [Usage Examples](docs/usage.md) | End-to-end examples with curl and common clients |
 | [Testing](docs/testing.md) | The offline `pytest` suite (`make test`) and the `scripts/tests.sh` endpoint runner |

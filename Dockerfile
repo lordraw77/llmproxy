@@ -10,6 +10,10 @@ COPY gunicorn.conf.py .
 COPY llmproxy ./llmproxy
 
 RUN useradd -m appuser
+# The audit trail writes here (AUDIT_FILE), and compose bind-mounts ./logs over
+# it: the directory must belong to the runtime user, or the writer thread only
+# ever counts permission errors.
+RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
 USER appuser
 
 EXPOSE 11434

@@ -29,6 +29,15 @@ All configuration is provided through environment variables, typically via a
 | `CACHE_TTL` | `300` | No | Time-to-live, in seconds, of each cache entry. After it elapses the entry expires and the next identical request goes upstream again. A non-positive value disables the cache. |
 | `CACHE_MAX_SIZE` | `512` | No | Maximum number of entries kept in the cache. Once the cap is reached the **least-recently-used** entry is evicted to make room. A non-positive value disables the cache. |
 | `CACHE_POLICY` | `deterministic` | No | Which requests are **eligible** for the cache once it is enabled: `off`, `embeddings`, `deterministic`, or `all`. The default only caches replies that can have a single correct value (embeddings, or completions with a `seed` / `temperature: 0`), so enabling the cache never silently replays a sampled answer. An unrecognized value falls back to `deterministic`. See [Cache eligibility](#cache-eligibility). |
+| `AUDIT_ENABLED` | `false` | No | When truthy, writes one structured record per request to `AUDIT_FILE`: prompt, completion, parameters, provider, tokens, timings and session. The record is built and written by a background thread, so it adds no latency to the request. See [Audit trail](audit.md). |
+| `AUDIT_FILE` | `logs/audit.jsonl` | No | Destination of the audit records (the directory is created if missing). Supports `{pid}` and `{date}` placeholders — use `{pid}` when running several gunicorn workers, which cannot coordinate rotation on a shared file. |
+| `AUDIT_FORMAT` | `jsonl` | No | `jsonl` (one record per line, for `tail`/`jq`) or `pretty` (indented, for reading directly). |
+| `AUDIT_BODIES` | `truncated` | No | How much content each record holds: `none` (accounting only: no prompts, no completions), `truncated` (clipped to `AUDIT_MAX_CHARS`), `full` (uncapped). The file contains conversations in clear text unless this is `none`. |
+| `AUDIT_MAX_CHARS` | `2000` | No | Character budget per captured text (each message, and the completion) under `truncated`. |
+| `AUDIT_QUEUE_SIZE` | `10000` | No | How many records may wait for the writer. When the queue is full a record is **dropped and counted** rather than making the request wait; drops are reported at `/stats`. |
+| `AUDIT_MAX_MB` | `64` | No | Size at which the audit file rotates. A record is never split, so the file may exceed the cap by at most one record. |
+| `AUDIT_BACKUPS` | `5` | No | Rotated audit files kept (`.1` … `.5`). Total disk used is at most `AUDIT_MAX_MB × (AUDIT_BACKUPS + 1)`. |
+| `AUDIT_SESSION_HEADER` | *(empty)* | No | Extra request header consulted first for the conversation id, before the built-in `X-Session-Id` / `X-Conversation-Id` / `X-Chat-Id` / `X-Request-Session`. Without any of them the session is fingerprinted from the conversation's opening message. |
 | `WEB_CONCURRENCY` / `THREADS` / `GUNICORN_TIMEOUT` | `2` / `8` / `600` | No | gunicorn tuning (Docker image only). Workers, threads per worker, and worker timeout. |
 
 ## Example `.env`

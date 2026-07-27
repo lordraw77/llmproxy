@@ -46,6 +46,11 @@ Thumbs.db
 # Logs
 *.log
 
+# Audit trail (contains prompts and completions)
+logs/
+*.jsonl
+*.jsonl.[0-9]
+
 # Internal working documents (not part of the published docs)
 docs/roadmap-plan.md
 docs/roadmap-fix.md

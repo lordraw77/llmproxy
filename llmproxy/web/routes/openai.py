@@ -5,6 +5,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
+from ... import audit
 from ...domain.sampling import build_sampling_params
 from ...providers import resp_json
 from ..container import deps
@@ -72,10 +73,18 @@ def v1_chat_completions():
         while the non-streaming branch above reports the exposed name. Rewriting
         it would mean parsing and re-serializing every chunk. Documented as a
         known limit of the relay in ``docs/api-reference.md`` (F11).
+
+        The audit trail buffers the bytes rather than decoding them here, for the
+        same reason: on this route the proxy never parses the stream, and it is
+        not going to start doing so per chunk to fill a log. The writer thread
+        decodes the buffer once the request is over.
         """
+        event = audit.current()
         try:
             for chunk in upstream.iter_content(chunk_size=None):
                 if chunk:
+                    event.first_output()
+                    event.add_raw(chunk)
                     yield chunk
         finally:
             upstream.close()

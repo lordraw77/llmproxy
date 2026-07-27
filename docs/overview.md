@@ -108,6 +108,7 @@ llmproxy/
 ├── logging_setup.py             # TZFormatter + configure_logging()
 ├── metrics.py                   # MetricsCollector (per-worker) + process_info()
 ├── cache.py                     # ResponseCache (per-worker TTL+LRU) + CachedResponse
+├── audit.py                     # Deferred per-request audit trail (queue + writer thread)
 ├── banner.py                    # the ASCII banner and the start-up summary
 │
 ├── domain/                      # pure business rules (no I/O, no framework)

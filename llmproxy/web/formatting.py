@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from flask import Response, jsonify
 
+from .. import audit
 from ..providers import resp_json
 from ..upstream.sse import iter_openai_sse
 from .middleware import defer_request_metrics
@@ -84,9 +85,17 @@ def completion_stream(upstream, mimetype, frame_chunk, frame_done, logger, metri
     """
     def generate():
         usage = {}
+        event = audit.current()
+        # The reconstruction of tool calls and finish reason is only paid for
+        # when someone reads it: the parser skips it entirely on a ``None``.
+        meta = {} if event is not audit.NO_AUDIT else None
         try:
-            for piece in iter_openai_sse(upstream, usage):
+            for piece in iter_openai_sse(upstream, usage, meta):
+                event.first_output()
+                event.add_text(piece)
                 yield frame_chunk(piece)
+            event.record_usage(usage)
+            event.record_outcome(meta)
             log_stream_usage(logger, metrics, rid, usage)
             tail = frame_done(usage)
             if tail:
@@ -112,13 +121,18 @@ def streaming_response(generate, mimetype):
         mimetype: ``text/event-stream`` or ``application/x-ndjson``.
     """
     deferred = defer_request_metrics()
+    event = deferred.event if deferred is not None else audit.NO_AUDIT
 
     def tracked():
-        try:
-            yield from generate()
-        finally:
-            if deferred is not None:
-                deferred.finish()
+        # The generator runs after the request context is gone, so it re-binds
+        # the audit event for its own duration: what it produces — the completion
+        # text, the time to first token, the final usage — is recorded from here.
+        with audit.bound(event):
+            try:
+                yield from generate()
+            finally:
+                if deferred is not None:
+                    deferred.finish()
 
     return Response(tracked(), mimetype=mimetype)
 

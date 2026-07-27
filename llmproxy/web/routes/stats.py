@@ -31,6 +31,8 @@ def _payload():
     if container.cache is not None:
         # Surface the response cache alongside the other metric groups.
         metrics["cache"] = container.cache.snapshot()
+    if container.audit is not None:
+        metrics["audit"] = container.audit.snapshot()
     return {
         "metrics": metrics,
         "process": process_info(container.settings),
@@ -72,6 +74,9 @@ def _template_context(payload):
         "upstream": metrics["upstream"],
         "cache": cache,
         "hit_rate_pct": round(cache["hit_rate"] * 100, 1) if cache else None,
+        # Only worth a card when the trail is on: the counters of a disabled
+        # audit are three zeros and a filename nothing writes to.
+        "audit": metrics.get("audit") if (metrics.get("audit") or {}).get("enabled") else None,
         "process": payload["process"],
         "models": payload["models"],
         "by_status": _sorted_pairs(requests["by_status"]),

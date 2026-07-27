@@ -119,6 +119,23 @@
   </div>
   {% endif %}
 
+  {% if audit %}
+  <div class="card">
+    <h2>Audit trail</h2>
+    <div class="kpis">
+      {{ kpi(audit.written, "records") }}
+      {{ kpi(audit.queued, "queued") }}
+      {{ kpi(audit.dropped, "dropped") }}
+    </div>
+    <table>
+      <tr><td class="k">file</td><td class="v">{{ audit.file }}</td></tr>
+      <tr><td class="k">format</td><td class="v">{{ audit.format }}</td></tr>
+      <tr><td class="k">bodies</td><td class="v">{{ audit.bodies }}</td></tr>
+      <tr><td class="k">write errors</td><td class="v">{{ audit.errors }}</td></tr>
+    </table>
+  </div>
+  {% endif %}
+
   <div class="card">
     <h2>Process manager</h2>
     <table>

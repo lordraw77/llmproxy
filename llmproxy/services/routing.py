@@ -10,6 +10,8 @@ Keeping the sequence here also keeps the cacheability policy (``CACHE_POLICY``,
 see :mod:`llmproxy.cache`) applied at exactly one call site.
 """
 
+from .. import audit
+
 
 class CachedRouter:
     """Sends an already-built payload to its provider, through the cache."""
@@ -58,6 +60,12 @@ class CachedRouter:
         hit = cache.get(key)
         if hit is not None:
             provider.log_cache_hit(rid, key)
+            # A hit never reaches the provider layer, so the audit record would
+            # otherwise show a request with no reply and no tokens: the served
+            # body is the reply, and its usage is what the call would have cost.
+            event = audit.current()
+            event.cached(provider.name)
+            event.record_body(hit)
             return CachedResponse(hit)
 
         resp = self._post(provider, native_id, payload, stream, rid, path)
@@ -71,6 +79,8 @@ class CachedRouter:
     @staticmethod
     def _post(provider, native_id, payload, stream, rid, path):
         """Call the provider with the model rewritten to its native id."""
+        # The only point where the exposed name and the native id coexist.
+        audit.current().routed(payload.get("model"))
         outbound = dict(payload)
         outbound["model"] = native_id
         if path is None:

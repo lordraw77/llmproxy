@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
+from .audit import DEFAULT_BODY_MODE, normalize_body_mode
 from .cache import normalize_policy
 
 try:  # Python 3.11+
@@ -58,6 +59,11 @@ def _interp(value, missing=None):
         return resolved or ""
 
     return _ENV_REF.sub(resolve, value)
+
+
+def _flag(name):
+    """Read a boolean environment variable using the project's truthy spelling."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _auth_for(ptype, api_key):
@@ -194,6 +200,19 @@ class Settings:
     cache_max_size: int = 512
     cache_policy: str = "deterministic"
 
+    # Deferred audit trail: one structured record per request, written off the
+    # request thread by a background writer. Disabled by default; see
+    # llmproxy.audit for the record shape and the drop-instead-of-block policy.
+    audit_enabled: bool = False
+    audit_file: str = "logs/audit.jsonl"
+    audit_format: str = "jsonl"      # jsonl | pretty
+    audit_bodies: str = DEFAULT_BODY_MODE  # none | truncated | full
+    audit_max_chars: int = 2000
+    audit_queue_size: int = 10000
+    audit_max_bytes: int = 64 * 1024 * 1024
+    audit_backups: int = 5
+    audit_session_header: str = ""
+
     # Configured upstream providers (from providers.toml, or a single provider
     # synthesized from the NVIDIA_* env vars as a backward-compatible fallback).
     providers: tuple = ()
@@ -298,8 +317,7 @@ def load_settings():
         log_tzinfo=log_tzinfo,
         upstream_timeout=float(os.environ.get("UPSTREAM_TIMEOUT", "120")),
         pool_size=pool_size,
-        force_upstream_stream=os.environ.get("FORCE_UPSTREAM_STREAM", "false").strip().lower()
-        in ("1", "true", "yes", "on"),
+        force_upstream_stream=_flag("FORCE_UPSTREAM_STREAM"),
         # Accept the conventional upper- and lower-case proxy env var names.
         http_proxy=os.environ.get("HTTP_PROXY", os.environ.get("http_proxy", "")).strip(),
         https_proxy=os.environ.get("HTTPS_PROXY", os.environ.get("https_proxy", "")).strip(),
@@ -308,11 +326,19 @@ def load_settings():
         retry_backoff=float(os.environ.get("RETRY_BACKOFF", "0.5")),
         proxy_api_key=os.environ.get("PROXY_API_KEY", "").strip(),
         embeddings_input_type=os.environ.get("EMBEDDINGS_INPUT_TYPE", "query").strip(),
-        cache_enabled=os.environ.get("CACHE_ENABLED", "false").strip().lower()
-        in ("1", "true", "yes", "on"),
+        cache_enabled=_flag("CACHE_ENABLED"),
         cache_ttl=float(os.environ.get("CACHE_TTL", "300")),
         cache_max_size=int(os.environ.get("CACHE_MAX_SIZE", "512")),
         cache_policy=normalize_policy(os.environ.get("CACHE_POLICY")),
+        audit_enabled=_flag("AUDIT_ENABLED"),
+        audit_file=os.environ.get("AUDIT_FILE", "logs/audit.jsonl").strip(),
+        audit_format=os.environ.get("AUDIT_FORMAT", "jsonl").strip().lower(),
+        audit_bodies=normalize_body_mode(os.environ.get("AUDIT_BODIES")),
+        audit_max_chars=int(os.environ.get("AUDIT_MAX_CHARS", "2000")),
+        audit_queue_size=int(os.environ.get("AUDIT_QUEUE_SIZE", "10000")),
+        audit_max_bytes=int(float(os.environ.get("AUDIT_MAX_MB", "64")) * 1024 * 1024),
+        audit_backups=int(os.environ.get("AUDIT_BACKUPS", "5")),
+        audit_session_header=os.environ.get("AUDIT_SESSION_HEADER", "").strip(),
         providers=_load_providers(missing),
         unresolved_env=tuple(sorted(missing)),
     )

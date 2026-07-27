@@ -23,6 +23,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.utils import should_bypass_proxies
 
+from .. import audit
 from ..upstream.sse import iter_openai_sse
 
 
@@ -256,6 +257,12 @@ class Provider:
         body = self._build_body(payload, path, upstream_stream, aggregate)
         url = self._url(path, upstream_stream, model)
 
+        # The audit event is the request's, bound by the middleware; it is a
+        # no-op object when the trail is disabled, so this costs one attribute
+        # lookup on the default path.
+        event = audit.current()
+        event.upstream_request(self.name, url, body, upstream_stream, aggregate)
+
         if logger.isEnabledFor(logging.INFO):
             if messages:
                 input_chars = sum(len(str(m.get("content", ""))) for m in messages)
@@ -296,6 +303,7 @@ class Provider:
                 logger.error("[%s] <- %s no-response after %.0fms | %s", rid, self.name, elapsed_ms, err)
                 if self._metrics is not None:
                     self._metrics.record_upstream(elapsed_ms, ok=False)
+                event.upstream_failed(err, elapsed_ms, attempt + 1)
                 raise
 
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -315,6 +323,7 @@ class Provider:
 
         if self._metrics is not None:
             self._metrics.record_upstream(elapsed_ms, ok=resp.ok)
+        event.upstream_response(resp.status_code, elapsed_ms, attempt + 1)
 
         level = logging.INFO if resp.ok else logging.WARNING
         logger.log(
@@ -325,6 +334,7 @@ class Provider:
 
         if not resp.ok:
             logger.warning("[%s] <- %s error body: %s", rid, self.name, resp.text[:1000])
+            event.upstream_rejected(resp.status_code, resp.text[:1000])
             resp.raise_for_status()
 
         # Streaming upstream: normalize to OpenAI SSE, aggregating if requested.
@@ -345,6 +355,7 @@ class Provider:
             body = resp_json(resp)
         except ValueError:
             return
+        audit.current().record_body(body)
         if body and logger.isEnabledFor(logging.DEBUG):
             logger.debug("[%s] <- %s response body: %s", rid, self.name, json.dumps(body)[:2000])
         usage = body.get("usage") or {}
@@ -403,4 +414,5 @@ class Provider:
             }],
             "usage": usage,
         }
+        audit.current().record_body(data)
         return AggregatedResponse(data)

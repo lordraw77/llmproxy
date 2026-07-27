@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-27
+
+### Added
+
+- **A deferred audit trail (`AUDIT_ENABLED`).** The access log says what
+  happened; it does not say what was asked, what came back, or what it cost —
+  answering "how many tokens did this conversation burn" or "what exactly did we
+  send when the provider refused" meant reconstructing it from five log lines,
+  and the prompt and the completion were nowhere. Enabling the trail writes one
+  structured record per request (JSON Lines by default, `pretty` optionally),
+  correlating the inbound call with its upstream leg: provider and native model,
+  the sampling parameters actually sent, the prompt, the completion, the token
+  usage, the retry count, the end-to-end and time-to-first-token latencies, the
+  error body of a refusal, and the session the request belongs to — from the
+  client's own conversation header when it sends one, otherwise fingerprinted
+  from the conversation's opening message.
+
+  It costs the request nothing: every layer only appends plain values to an
+  in-memory event, and a single background thread does the clipping, the parsing,
+  the serialization and the file rotation. Back-pressure is resolved by dropping
+  records, never by making a request wait — a proxy that stalls its traffic to
+  keep its audit complete has the trade-off backwards — and drops are reported at
+  `/stats` alongside the written count. On the raw SSE relay of
+  `/v1/chat/completions` the bytes are buffered and decoded by the writer, so the
+  busiest route still does not parse a stream it otherwise forwards untouched.
+  `AUDIT_BODIES` chooses how much content is recorded (`none` keeps the whole
+  accounting side with no prompt or completion text); inbound API keys are stored
+  as a truncated digest, never in clear. Disabled by default. See
+  [docs/audit.md](docs/audit.md).
+
+- **Unit test suite** (`tests/`, pytest). Offline and deterministic — no network,
+  no `.env`, no `providers.toml`: `Settings` objects are built by the fixtures
+  rather than through `load_settings()`. Covers `ResponseCache` (TTL, LRU,
+  copy-isolation, counters), `ProviderRegistry` (bare vs. `provider:model` naming,
+  aliases, collisions, bare-id resolution across several owners of one model id),
+  `build_sampling_params`, and the SSE parser (including incremental reassembly of
+  parallel tool calls), plus regression tests for the fixes below. Run with
+  `make test` / `make test-cov`; dev dependencies live in `requirements-dev.txt`
+  and never enter the runtime image.
+
 ### Changed
 
 - **The response cache no longer replays non-deterministic completions by
@@ -103,18 +143,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   documented in `docs/api-reference.md`. `ProviderRegistry.provider_for()` also
   raises explicitly instead of dereferencing `None`, which used to be an
   `AttributeError` when no model was configured.
-
-### Added
-
-- **Unit test suite** (`tests/`, pytest). Offline and deterministic — no network,
-  no `.env`, no `providers.toml`: `Settings` objects are built by the fixtures
-  rather than through `load_settings()`. Covers `ResponseCache` (TTL, LRU,
-  copy-isolation, counters), `ProviderRegistry` (bare vs. `provider:model` naming,
-  aliases, collisions, bare-id resolution across several owners of one model id),
-  `build_sampling_params`, and the SSE parser (including incremental reassembly of
-  parallel tool calls), plus regression tests for the three fixes below. Run with
-  `make test` / `make test-cov`; dev dependencies live in `requirements-dev.txt`
-  and never enter the runtime image.
 
 ### Internal
 
@@ -347,6 +375,13 @@ endpoint and native `llama.cpp` compatibility were added.
 - Initial llmproxy server implementation: an Ollama-compatible proxy to NVIDIA's
   OpenAI-compatible API, with streaming, base documentation and test scripts.
 
+[Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/lordraw77/llmproxy/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/lordraw77/llmproxy/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/lordraw77/llmproxy/compare/v1.1.4...v1.2.0
+[1.1.4]: https://github.com/lordraw77/llmproxy/compare/v1.1.3...v1.1.4
+[1.1.3]: https://github.com/lordraw77/llmproxy/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/lordraw77/llmproxy/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/lordraw77/llmproxy/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/lordraw77/llmproxy/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/lordraw77/llmproxy/releases/tag/v1.0.0

@@ -6,6 +6,7 @@ import uuid
 
 from flask import g, jsonify, request
 
+from .. import audit
 from .container import deps
 
 
@@ -19,6 +20,13 @@ def _unauthorized():
     return jsonify({"error": {"message": "unauthorized", "type": "authentication_error"}}), 401
 
 
+def _inbound_token():
+    """Return the API key presented by the caller, from either accepted header."""
+    header = request.headers.get("Authorization", "")
+    token = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
+    return token or request.headers.get("X-Api-Key", "").strip()
+
+
 def _check_auth(settings):
     """Validate the request token when a proxy API key is configured.
 
@@ -28,9 +36,7 @@ def _check_auth(settings):
     """
     if not settings.proxy_api_key or request.path in settings.auth_exempt_paths:
         return None
-    header = request.headers.get("Authorization", "")
-    token = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
-    token = token or request.headers.get("X-Api-Key", "").strip()
+    token = _inbound_token()
     # Constant-time comparison: avoids leaking the key via timing. Compared as
     # bytes because ``compare_digest`` rejects non-ASCII str with a TypeError,
     # which would turn a failed authentication into a 500.
@@ -76,12 +82,16 @@ class DeferredMetrics:
     by ``after_request``, which does run before the body is consumed.
     """
 
-    def __init__(self, logger, metrics, rid, label, start):
+    def __init__(self, logger, metrics, rid, label, start, trail=None, event=None):
         self._logger = logger
         self._metrics = metrics
         self._rid = rid
         self._label = label
         self._start = start
+        self._trail = trail
+        #: The request's audit event, carried here for the same reason as the
+        #: rest: the generator outlives the request context that owns it.
+        self.event = event if event is not None else audit.NO_AUDIT
         self.method = request.method
         self.path = request.path
         #: Response status, set by ``after_request`` once the response exists.
@@ -96,6 +106,7 @@ class DeferredMetrics:
             "[%s] <-- %s %s | status=%s duration=%.0fms (stream complete)",
             self._rid, self.method, self.path, self.status, elapsed_ms,
         )
+        submit_audit(self._trail, self.event, self.status, elapsed_ms)
 
 
 def defer_request_metrics():
@@ -112,9 +123,54 @@ def defer_request_metrics():
     deferred = DeferredMetrics(
         container.logger, container.metrics,
         getattr(g, "req_id", None), _metrics_label(), g.req_start,
+        container.audit, getattr(g, "audit", None),
     )
     g.deferred_metrics = deferred
     return deferred
+
+
+def submit_audit(trail, event, status, elapsed_ms):
+    """Close ``event`` and hand it to the writer, unless it is not worth a record.
+
+    A successful ``GET`` is discovery or liveness traffic — a model list, a health
+    probe, the dashboard polling itself — with no prompt, no completion and no
+    tokens to account for; recording every one of them would bury the calls that
+    do cost something. A failing one is kept: a 404 on a model id or a rejected
+    key is exactly what an audit trail is read for.
+    """
+    if trail is None or event is audit.NO_AUDIT:
+        return
+    # ``event.method``, not ``request.method``: a streaming request settles this
+    # from its generator, with the request context already gone.
+    if event.method == "GET" and status < 400:
+        return
+    trail.submit(event.finish(status, elapsed_ms))
+
+
+def _start_audit(container, body):
+    """Open this request's audit event and bind it for the layers downstream.
+
+    Bound to the thread as well as to ``g``: the provider layer records the
+    upstream leg from a call chain that carries no audit argument, and Flask's
+    ``g`` is not reachable from the streaming generators.
+    """
+    trail = container.audit
+    if trail is None or not trail.enabled or request.path in _METRICS_EXEMPT:
+        return
+    event = trail.event(
+        rid=g.req_id,
+        started=g.req_start,
+        method=request.method,
+        path=request.path,
+        route=_metrics_label(),
+        client_ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent"),
+        api_key_id=audit.key_id(_inbound_token()),
+        body=body,
+    )
+    event.identify_session(request.headers)
+    g.audit = event
+    audit.bind(event)
 
 
 def register_middleware(app):
@@ -136,6 +192,9 @@ def register_middleware(app):
             g.metrics_tracked = True
             container.metrics.begin()
 
+        body = request.get_json(silent=True) or {}
+        _start_audit(container, body)
+
         unauthorized = _check_auth(container.settings)
         if unauthorized is not None:
             logger.warning(
@@ -144,7 +203,6 @@ def register_middleware(app):
             )
             return unauthorized
 
-        body = request.get_json(silent=True) or {}
         logger.info(
             "[%s] --> %s %s | client=%s model=%s stream=%s",
             g.req_id, request.method, request.path,
@@ -175,6 +233,10 @@ def register_middleware(app):
             )
             if getattr(g, "metrics_tracked", False):
                 deps().metrics.record(_metrics_label(), response.status_code, elapsed_ms)
+            submit_audit(
+                deps().audit, getattr(g, "audit", audit.NO_AUDIT),
+                response.status_code, elapsed_ms,
+            )
         return response
 
     @app.teardown_request
@@ -183,6 +245,12 @@ def register_middleware(app):
 
         Skipped for a deferred (streaming) request: it is still in flight here, and
         its generator's ``finally`` owns the decrement.
+
+        Unbinding the audit event is not: the thread is about to serve another
+        request, and a leftover binding would attribute its upstream call to the
+        request that just ended. A streaming generator keeps its own binding, made
+        independently when it runs.
         """
+        audit.unbind()
         if getattr(g, "metrics_tracked", False) and getattr(g, "deferred_metrics", None) is None:
             deps().metrics.end()

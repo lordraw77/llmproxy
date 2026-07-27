@@ -56,6 +56,7 @@ nothing here reaches the runtime image.
 | `tests/test_routing.py` | `CachedRouter` | Native-vs-exposed model naming, cache bypass on streams, namespace separation, only successful JSON replies stored |
 | `tests/test_model_metadata.py` | `owner_of` + discovery routes | `owned_by` / `details.family` name the serving provider, per model |
 | `tests/test_stats_dashboard.py` | The `/stats` template | Data shaping (ordering, uptime, hit rate), which cards render, and autoescaping |
+| `tests/test_audit.py` | The deferred audit trail | One record per request end-to-end (non-streaming, re-framed stream, byte relay), token and error capture, session identification by header and by fingerprint, the `AUDIT_BODIES` policy and clipping, key digests, which requests are worth a record, drop-on-full-queue, and file rotation |
 | `tests/test_p0_regressions.py` | The three 1.3.0 security/robustness fixes | See below |
 
 ### The regression tests

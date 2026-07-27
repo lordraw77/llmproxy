@@ -7,6 +7,10 @@ clock in the timezone you choose.
 Logs are written to standard output (visible via `docker compose logs -f
 llmproxy` or directly in the terminal for a local run).
 
+For a machine-readable record of each request — prompt, completion, parameters,
+tokens and session, correlated in one JSON object and written off the request
+thread — see the [audit trail](audit.md). The two join on the correlation id.
+
 ## Configuration
 
 | Variable | Default | Description |
