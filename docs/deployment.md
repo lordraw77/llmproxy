@@ -107,7 +107,7 @@ docker run -d --name llmproxy -p 11434:11434 --env-file .env \
   lordraw/llmproxy:latest
 ```
 
-Pin a specific version in production (e.g. `lordraw/llmproxy:1.4.0`) rather than
+Pin a specific version in production (e.g. `lordraw/llmproxy:1.4.1`) rather than
 `latest`. To point Compose at the published image, replace `build: .` with
 `image: lordraw/llmproxy:latest`.
 
@@ -126,6 +126,40 @@ make help             # list all targets
 
 On an exact git tag the image is tagged `:<version>` **and** `:latest`; off a
 tag, `:latest` is left untouched. Override with `IMAGE`, `VERSION`, `PLATFORMS`.
+
+`make release` refuses to run unless HEAD is **on a tag** and the working tree is
+**clean**. Both conditions are the same one seen from two sides: the version is
+`git describe`, so an untagged HEAD produces `1.4.1-3-gabc1234` and a dirty tree
+produces `1.4.1-dirty`. Either way the wrong string is published — and it is
+baked into the image as the `org.opencontainers.image.version` label, where a
+`docker tag` can no longer correct it. (`make publish` is the deliberate escape
+hatch and skips both checks.)
+
+#### `scripts/release.sh`
+
+For a full release, prefer the script over the raw targets:
+
+```bash
+./scripts/release.sh --dry-run   # run every check, print the plan, change nothing
+./scripts/release.sh             # tag, build, verify, push image, push git
+```
+
+It runs all the checks **before** touching anything, so a problem surfaces with
+the repository still intact: the version in `llmproxy/__init__.py` matches the
+tag being cut, `CHANGELOG.md` actually has a section for it, the tree is clean,
+the tests pass, and — if the tag already exists elsewhere — whether moving it
+would rewrite history someone else has already pulled. It then asks before each
+irreversible step, and after building it **verifies the image's own OCI version
+label** before pushing it, which is the check that catches a wrong version while
+it is still fixable.
+
+| Option | Effect |
+|--------|--------|
+| `-n`, `--dry-run` | checks and plan only |
+| `-y`, `--yes` | no interactive confirmations (CI) |
+| `--skip-tests` | skip the suite (discouraged) |
+| `--multi-arch` | build via buildx (builds and pushes in one step) |
+| `--no-docker` / `--no-git` | stop short of publishing to Docker Hub / `origin` |
 
 ## Common operational tasks
 
@@ -208,6 +242,20 @@ without any coordination. The practical limit is your upstream NVIDIA API rate
 limit and quota, not llmproxy itself. (The audit trail does not change that — it
 is an append-only side effect, not shared state — but each replica writes its own
 file, so collecting them is a log-shipping job like any other.)
+
+**Before adding replicas, check the ceiling inside the one you have.**
+`WEB_CONCURRENCY × THREADS` caps how many requests a container serves at once —
+64 with the defaults (`2 × 32`), and only 16 before 1.4.1. Past that, requests
+queue in the socket backlog no matter how idle the host looks, which reads as
+"the proxy is slow" when it is simply full. Raising `THREADS` is nearly free for
+this workload: a request spends its life blocked on the upstream, not on the CPU.
+See [Concurrency and pool sizing](configuration.md#concurrency-and-pool-sizing)
+for how to size it, and why `UPSTREAM_POOL_SIZE` must follow.
+
+A single container with more threads is also cheaper than more replicas: the
+[response cache](configuration.md#response-caching) is per-worker, so spreading
+the same traffic over more processes splits the cache and lowers the hit rate on
+each.
 
 Note that the `/stats` metrics are kept **in memory per gunicorn worker** (and
 per replica): each response reflects only the worker that served it. This is fine

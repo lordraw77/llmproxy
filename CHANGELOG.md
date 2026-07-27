@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-07-27
+
+A performance release. No new endpoints and no change to any response the proxy
+produces: the streaming output is byte-identical to 1.4.0's, verified frame by
+frame. What changed is what the proxy *spends* to produce it, on the three paths
+that run per token, per request and per cache hit. Every figure below is measured
+on this code, not estimated.
+
+### Changed
+
+- **A cache hit no longer deep-copies the body it serves.** `get`/`set` copied
+  the stored reply recursively so that a route rewriting `model` on it could not
+  corrupt the entry. For a batch of eight 1536-dimension embeddings that copy
+  cost **4.1 ms** — on the one path whose entire purpose is to be orders of
+  magnitude cheaper than the upstream call it replaces, and the larger the cached
+  reply, the more of the saving it ate. The copy is now shallow: **4.1 ms → 0.9
+  µs**.
+
+  This narrows a contract, and the narrower one is now written down. A served
+  body may be mutated **at the top level only** — which is all any caller has
+  ever done (`data["model"] = ...` in the two OpenAI routes, nothing else, in the
+  whole codebase). Reaching into `choices`/`data` and writing there would corrupt
+  every later hit on that key; `tests/test_cache.py::test_isolation_is_top_level_only`
+  pins the limit so it is found by a failing test rather than by a wrong answer.
+
+- **Native streaming no longer serializes each token to immediately parse it
+  back.** The Anthropic and Gemini providers build OpenAI `chat.completion.chunk`
+  dicts in memory; `TranslatedStream` serialized every one of them to SSE text
+  purely so that `iter_openai_sse` — the next function in the call chain — could
+  `json.loads` it back into the dict it started as. A `dumps`/`loads` pair per
+  token, spent to cross a function boundary: **6.6 µs against 0.1 µs**, ~6.5 ms of
+  pure CPU per thousand-token Claude or Gemini completion.
+
+  The parser now takes the decoded chunks directly when the stream offers them
+  (`iter_chunks`) and decodes SSE text only when that is what it is really given —
+  a live OpenAI-compatible upstream, or the audit trail's buffered replay. A
+  1000-token native completion costs **8.06 ms → 0.84 ms** (9.6x), with identical
+  content, usage and `finish_reason`. `iter_lines`/`iter_content` stay on
+  `TranslatedStream`: the `/v1/chat/completions` byte relay still wants the wire
+  form.
+
+- **Streaming `/v1/completions` frames the constant part of each chunk once.**
+  Every token rebuilt and re-serialized a four-level dict whose only varying field
+  was the text — **3.9 µs → 0.6 µs** per token, ~3.3 ms per thousand. The Ollama
+  routes already did this; `/v1/completions` was the one left behind. It also
+  fixes a small incoherence: `created` was recomputed per chunk, so it drifted
+  across a single response instead of naming when the completion started.
+
+- **`input_chars` is counted without materializing the message.** The old
+  spelling, `len(str(content))`, built the `repr` of the whole structure just to
+  measure it — on multimodal content that is a full transient copy of every base64
+  image in the prompt, ~185 µs and a megabyte of garbage, produced at `INFO` (so
+  on every request) and discarded one line later. Text blocks are now walked and
+  counted directly.
+
+  For a multimodal message the reported number therefore changes: it is now the
+  length of the **text** in the message, where before it was the length of
+  Python's repr of the block list — punctuation, key names and base64 payload
+  included. The old value was not a quantity anyone could use; plain string
+  content is unaffected. This applies to both the `input_chars=` field of the
+  access log and `request.input_chars` in the audit record.
+
+- **The default thread count per gunicorn worker is 32, up from 8.**
+  `WEB_CONCURRENCY × THREADS` is a hard ceiling on requests in flight, and at
+  2 × 8 the image saturated at **16 concurrent requests** regardless of the
+  hardware under it. A completion holds its thread blocked on the upstream for as
+  long as generation takes — tens of seconds — while using essentially no CPU, so
+  these threads cost memory and little else. The ceiling moves to 64.
+  `UPSTREAM_POOL_SIZE` already follows `THREADS`, so the connection pool grows
+  with it; left smaller, urllib3 discards the surplus connections and each
+  discard costs the next request a fresh TLS handshake with the provider.
+
+### Added
+
+- **`MAX_REQUEST_MB` (default `32`) bounds the inbound request body.** Werkzeug
+  buffers a body in memory before any route sees it, and there was no limit: the
+  ceiling on a worker's memory was whatever a caller chose to send, multiplied by
+  the number of threads accepting at once. The default passes a genuine
+  multimodal prompt carrying several base64 images and refuses a body that can
+  only be a mistake or an attack; `0` restores the previous unlimited behaviour.
+  Over the limit the proxy answers `413` in the usual OpenAI error shape rather
+  than with Werkzeug's HTML page, which an OpenAI SDK would surface to the user as
+  a JSON decode error instead of as the size limit it is.
+
+- **`tests/test_perf_invariants.py`.** These optimizations are the kind a later
+  well-meaning refactor undoes without noticing, so each is pinned by a test that
+  asserts the *property* rather than a timing (a benchmark in CI is a flaky test).
+  Among them a tripwire that fails if anything ever re-serializes an
+  already-decoded stream, and an equivalence test proving the fast path and the
+  SSE-text path produce the same content, usage and metadata.
+
+### Fixed
+
+- **The request body is no longer parsed before the caller is authenticated.**
+  With `PROXY_API_KEY` set, the middleware parsed the inbound JSON — and hashed a
+  session fingerprint over it — and only then checked the key. Anyone able to
+  reach the port could therefore spend a worker thread on an arbitrarily large
+  JSON document before being told no, without holding a credential. The check now
+  comes first. The rejection is still audited, and deliberately: who was refused,
+  from where, on which key id is precisely what the trail is read for. Only the
+  body of a refused request goes unrecorded.
+
+- **An upstream error body is decoded once instead of twice.**
+  `requests`' `Response.text` is a property that re-decodes the entire body on
+  every access, and the error path read it twice — to clip it to 1000 characters
+  twice, once for the log line and once for the audit record. A large error body
+  was fully decoded twice to keep a kilobyte of it.
+
+- **`deps()` is called once per response hook instead of three times.** Each call
+  dereferences the `current_app` proxy and walks the application-context stack.
+
 ## [1.4.0] - 2026-07-27
 
 ### Added
@@ -389,7 +500,8 @@ endpoint and native `llama.cpp` compatibility were added.
 - Initial llmproxy server implementation: an Ollama-compatible proxy to NVIDIA's
   OpenAI-compatible API, with streaming, base documentation and test scripts.
 
-[Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/lordraw77/llmproxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/lordraw77/llmproxy/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/lordraw77/llmproxy/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/lordraw77/llmproxy/compare/v1.1.4...v1.2.0

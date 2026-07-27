@@ -45,7 +45,6 @@ consumed incrementally and are not replayable), and only successful (2xx) replie
 enter the cache.
 """
 
-import copy
 import hashlib
 import json
 import threading
@@ -190,11 +189,22 @@ class ResponseCache:
         return f"{namespace}:{digest}"
 
     def get(self, key):
-        """Return a deep copy of the cached body for ``key``, or ``None`` on a miss.
+        """Return a copy of the cached body for ``key``, or ``None`` on a miss.
 
-        Expired entries are dropped and counted as a miss. A copy is returned so a
-        caller mutating the response (route handlers overwrite ``model``) cannot
-        corrupt the stored entry.
+        Expired entries are dropped and counted as a miss. A **shallow** copy is
+        returned so a caller mutating the response cannot corrupt the stored
+        entry. Shallow is deliberate and sufficient: the only mutation any caller
+        performs on a served body is the top-level ``data["model"] = ...`` of the
+        two OpenAI routes, which a shallow copy already isolates. A deep copy cost
+        4ms on a batch of eight 1536-dimension embeddings — on the hit path, whose
+        entire reason to exist is to be ~1000x cheaper than the upstream call it
+        replaces — for isolation nothing asks for.
+
+        The invariant this rests on: **a served body may be mutated at the top
+        level only.** Reaching into ``data["choices"][0]`` or ``data["data"][i]``
+        and writing there would corrupt every later hit on the same key. Nothing
+        does today (the routes read nested values and rebuild their own dicts);
+        anything that starts to must copy the branch it touches.
         """
         if not self._enabled:
             return None
@@ -214,18 +224,20 @@ class ResponseCache:
             # Refresh recency for LRU ordering.
             self._store.move_to_end(key)
             self.hits += 1
-            return copy.deepcopy(value)
+            return dict(value)
 
     def set(self, key, value):
         """Store ``value`` under ``key`` with a fresh TTL, evicting LRU if full.
 
-        A deep copy is stored so later mutation of the caller's object does not
-        leak into the cache.
+        A shallow copy is stored, for the reason (and under the invariant) spelled
+        out in :meth:`get`: the caller goes on to hand this very object to a route
+        that overwrites its top-level ``model``, and the copy is what keeps that
+        out of the cache.
         """
         if not self._enabled:
             return
         expires_at = time.time() + self._ttl
-        snapshot = copy.deepcopy(value)
+        snapshot = dict(value)
         with self._lock:
             if key in self._store:
                 # Overwrite in place and mark as most-recently-used.

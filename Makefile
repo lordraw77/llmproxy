@@ -29,6 +29,12 @@ VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^
 # Non vuoto solo quando HEAD e' esattamente su un tag: abilita l'alias :latest.
 GIT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
 
+# Non vuoto quando ci sono modifiche non committate a file TRACCIATI: e' la
+# condizione esatta che fa appendere "-dirty" a git describe, e quindi alla
+# versione dell'immagine. I file non tracciati non contano (ne' per describe ne'
+# qui), da cui --untracked-files=no.
+GIT_DIRTY := $(shell git status --porcelain --untracked-files=no 2>/dev/null)
+
 # Piattaforme per le build multi-arch (target buildx-*).
 PLATFORMS ?= linux/amd64
 
@@ -146,12 +152,32 @@ run: ## Avvia l'immagine :VERSION in locale (usa .env, porta 11434)
 clean: ## Rimuove le immagini locali :VERSION e :latest
 	-docker rmi $(IMAGE_VERSION) $(IMAGE_LATEST) 2>/dev/null || true
 
-# Impedisce release accidentali fuori da un tag git.
+# Impedisce release accidentali fuori da un tag git, o con modifiche pendenti.
+#
+# Le due condizioni sono la stessa cosa vista da due lati: la versione
+# dell'immagine e' `git describe`, quindi HEAD fuori da un tag la rende
+# "1.4.1-3-gabc1234" e un working tree sporco la rende "1.4.1-dirty". In
+# entrambi i casi il tag pubblicato su Docker Hub non e' quello voluto, e la
+# versione finisce anche nella label OCI dentro l'immagine — dove un
+# `docker tag` non la puo' piu' correggere.
 .PHONY: guard-tag
 guard-tag:
 	@if [ -z "$(GIT_TAG)" ]; then \
 		echo "ERRORE: HEAD non e' su un tag git."; \
+		echo "        La versione calcolata sarebbe '$(VERSION)'."; \
 		echo "        Crea un tag prima di rilasciare, es.: git tag v1.2.3"; \
+		echo "        (oppure forza con: make build/push VERSION=x.y.z)"; \
+		exit 1; \
+	fi
+	@if [ -n "$(GIT_DIRTY)" ]; then \
+		echo "ERRORE: ci sono modifiche non committate: la versione diventerebbe"; \
+		echo "        '$(VERSION)' invece di '$(GIT_TAG:v%=%)'."; \
+		echo; \
+		git status --short --untracked-files=no | sed 's/^/          /'; \
+		echo; \
+		echo "        Committa (o stasha) le modifiche. Se il commit finisce"; \
+		echo "        DOPO il tag, sposta il tag su HEAD:"; \
+		echo "          git tag -f -a $(GIT_TAG) -m '$(GIT_TAG)' HEAD"; \
 		echo "        (oppure forza con: make build/push VERSION=x.y.z)"; \
 		exit 1; \
 	fi

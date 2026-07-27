@@ -61,6 +61,10 @@ def create_app(settings=None):
     embeddings = EmbeddingService(registry, settings.embeddings_input_type, cache=cache)
 
     app = Flask(__name__)
+    # Refused by Werkzeug before the body is buffered, so an oversized request
+    # costs the worker nothing beyond the connection. 0 means "no limit", which
+    # is Flask's own default and what this deployment had until now.
+    app.config["MAX_CONTENT_LENGTH"] = settings.max_request_bytes or None
     Container(
         settings, logger, registry, completions, embeddings, metrics, cache, audit
     ).attach(app)

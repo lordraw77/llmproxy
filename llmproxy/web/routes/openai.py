@@ -135,14 +135,19 @@ def v1_completions():
             "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         })
 
+    # Constant framing computed once, as the Ollama routes already do: inside the
+    # per-token loop only the text is serialized, instead of rebuilding and
+    # re-serializing a four-level dict for every token. It also pins ``created``
+    # to the start of the completion — calling ``time.time()`` per chunk let the
+    # field drift across a single response.
+    prefix = ('data: {"id": "cmpl-llmproxy", "object": "text_completion", '
+              '"created": %d, "model": %s, "choices": [{"text": ') % (
+        int(time.time()), json.dumps(model),
+    )
+    suffix = ', "index": 0, "logprobs": null, "finish_reason": null}]}\n\n'
+
     def chunk(piece):
-        return "data: " + json.dumps({
-            "id": "cmpl-llmproxy",
-            "object": "text_completion",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [{"text": piece, "index": 0, "logprobs": None, "finish_reason": None}],
-        }) + "\n\n"
+        return prefix + json.dumps(piece) + suffix
 
     return completion_stream(
         upstream, "text/event-stream", chunk, lambda _usage: "data: [DONE]\n\n",

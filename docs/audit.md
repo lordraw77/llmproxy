@@ -131,7 +131,7 @@ Field by field:
 | `client.api_key_id` | A truncated SHA-256 of the inbound key: callers can be correlated without the file ever holding a credential. |
 | `model` | All four names a request has: what the client asked for, what the proxy exposes, the provider's native id, and who served it. |
 | `params` | Everything that is not content in the payload **actually sent upstream** — sampling knobs, `stop`, `response_format`, `tool_choice`, provider-specific extras. `tools` collapses to the function names unless `AUDIT_BODIES=full`. |
-| `request` | `input_chars` and `message_count` are always recorded; the messages themselves follow `AUDIT_BODIES`. Multimodal blocks are serialized before clipping, so a base64 image cannot blow up the file. |
+| `request` | `input_chars` and `message_count` are always recorded; the messages themselves follow `AUDIT_BODIES`. Multimodal blocks are serialized before clipping, so a base64 image cannot blow up the file. On multimodal content `input_chars` counts the **text** of the message (since 1.4.1 — before, it was the length of Python's repr of the block list, base64 payload included, which measured the encoding rather than the prompt). |
 | `response` | Status, finish reason, completion length, the completion itself (per `AUDIT_BODIES`), and any tool calls. `truncated` says whether the capture hit its budget. |
 | `tokens` | The upstream `usage`, for streaming and non-streaming replies alike. `null` when the upstream reported none. |
 | `timing` | End-to-end duration, upstream latency, and time to first token for streams. |

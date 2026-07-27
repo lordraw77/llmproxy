@@ -38,7 +38,7 @@ nothing here reaches the runtime image.
 
 | File | Target | What it pins |
 |---|---|---|
-| `tests/test_cache.py` | `llmproxy.cache.ResponseCache` | TTL expiry (with a frozen clock), LRU eviction and recency refresh, deep-copy isolation in both directions, key derivation, the counters `/stats` reports |
+| `tests/test_cache.py` | `llmproxy.cache.ResponseCache` | TTL expiry (with a frozen clock), LRU eviction and recency refresh, copy isolation in both directions **and its documented top-level-only limit**, key derivation, the counters `/stats` reports |
 | `tests/test_registry.py` | `ProviderRegistry` | Bare names with one provider vs. `provider:model` with two or more, aliases, collision detection, bare-native-id resolution when three providers serve the same model id, embeddings routing |
 | `tests/test_sampling.py` | `build_sampling_params` | OpenAI passthrough, the `num_predict` → `max_tokens` alias, unknown keys dropped, `temperature: 0` preserved |
 | `tests/test_sse.py` | `iter_openai_sse` | Delta accumulation, `[DONE]`, malformed chunks skipped, `usage` extraction, incremental reassembly of parallel tool calls |
@@ -58,6 +58,7 @@ nothing here reaches the runtime image.
 | `tests/test_stats_dashboard.py` | The `/stats` template | Data shaping (ordering, uptime, hit rate), which cards render, and autoescaping |
 | `tests/test_audit.py` | The deferred audit trail | One record per request end-to-end (non-streaming, re-framed stream, byte relay), token and error capture, session identification by header and by fingerprint, the `AUDIT_BODIES` policy and clipping, key digests, which requests are worth a record, drop-on-full-queue, and file rotation |
 | `tests/test_p0_regressions.py` | The three 1.3.0 security/robustness fixes | See below |
+| `tests/test_perf_invariants.py` | The 1.4.1 hot-path optimizations | See [The performance invariants](#the-performance-invariants) |
 
 ### The regression tests
 
@@ -72,6 +73,30 @@ back. Each was verified to **fail** against the pre-fix code:
   warning, and an unknown provider `type` must still fail fast.
 - **Non-ASCII inbound key** — a token (or a configured `PROXY_API_KEY`) with
   non-ASCII characters must produce a `401`, not the `TypeError`-driven `500`.
+
+### The performance invariants
+
+`tests/test_perf_invariants.py` guards the 1.4.1 hot-path work. Optimizations
+are unusually easy to undo by accident: nothing breaks when a fast path is
+quietly replaced by the slow one it was written to avoid — the tests still pass,
+the output is still correct, and only the bill changes. These tests assert the
+**property** that makes each path fast, never a timing (a benchmark in CI is a
+flaky test):
+
+- **No serialize/parse round trip on native streams** — a `TranslatedStream`
+  subclass whose `iter_lines` raises is fed to `iter_openai_sse`. Touching the
+  serializing surface at all fails the test. A companion test proves the decoded
+  fast path and the SSE-text path yield identical content, `usage` and metadata,
+  so the shortcut is an optimization and not a second, drifting implementation.
+- **`input_chars` never materializes the message** — a multimodal message
+  carrying a 100 KB base64 image must be counted by its text alone.
+- **Authentication precedes parsing** — with `PROXY_API_KEY` set, a request with
+  a wrong key must reach the `401` with *zero* calls to `get_json`, counted by
+  patching `flask.wrappers.Request`. A separate test pins the other half: the
+  rejection is still written to the audit trail, with an empty body.
+- **The inbound size cap** — over `MAX_REQUEST_MB` the answer is a `413` in the
+  OpenAI error shape (not Werkzeug's HTML page), and `0` still disables it.
+- **Cache isolation is top-level** — per key the routes actually rewrite.
 
 ## Writing a new test
 
