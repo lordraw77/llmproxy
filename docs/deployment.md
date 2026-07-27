@@ -127,6 +127,40 @@ make help             # list all targets
 On an exact git tag the image is tagged `:<version>` **and** `:latest`; off a
 tag, `:latest` is left untouched. Override with `IMAGE`, `VERSION`, `PLATFORMS`.
 
+`make release` refuses to run unless HEAD is **on a tag** and the working tree is
+**clean**. Both conditions are the same one seen from two sides: the version is
+`git describe`, so an untagged HEAD produces `1.4.1-3-gabc1234` and a dirty tree
+produces `1.4.1-dirty`. Either way the wrong string is published — and it is
+baked into the image as the `org.opencontainers.image.version` label, where a
+`docker tag` can no longer correct it. (`make publish` is the deliberate escape
+hatch and skips both checks.)
+
+#### `scripts/release.sh`
+
+For a full release, prefer the script over the raw targets:
+
+```bash
+./scripts/release.sh --dry-run   # run every check, print the plan, change nothing
+./scripts/release.sh             # tag, build, verify, push image, push git
+```
+
+It runs all the checks **before** touching anything, so a problem surfaces with
+the repository still intact: the version in `llmproxy/__init__.py` matches the
+tag being cut, `CHANGELOG.md` actually has a section for it, the tree is clean,
+the tests pass, and — if the tag already exists elsewhere — whether moving it
+would rewrite history someone else has already pulled. It then asks before each
+irreversible step, and after building it **verifies the image's own OCI version
+label** before pushing it, which is the check that catches a wrong version while
+it is still fixable.
+
+| Option | Effect |
+|--------|--------|
+| `-n`, `--dry-run` | checks and plan only |
+| `-y`, `--yes` | no interactive confirmations (CI) |
+| `--skip-tests` | skip the suite (discouraged) |
+| `--multi-arch` | build via buildx (builds and pushes in one step) |
+| `--no-docker` / `--no-git` | stop short of publishing to Docker Hub / `origin` |
+
 ## Common operational tasks
 
 ```bash
