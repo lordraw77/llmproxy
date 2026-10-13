@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-13
+
+### Fixed
+
+- **Streamed replies with accented text are no longer mangled.** Upstreams send
+  `text/event-stream` without a `charset`, and `requests` decodes such a body
+  as ISO-8859-1, so "città" reached the client as "cittÃ ". SSE streams are now
+  always decoded as UTF-8 — the only encoding the SSE spec allows — in the
+  shared decoder and in the Anthropic and Gemini stream translators.
+
+### Documentation
+
+- `providers.toml.example` shows how to put two or more local servers behind
+  clean, provider-free aliases.
+
 ## [1.4.1] - 2026-07-27
 
 A performance release. No new endpoints and no change to any response the proxy
@@ -500,7 +515,8 @@ endpoint and native `llama.cpp` compatibility were added.
 - Initial llmproxy server implementation: an Ollama-compatible proxy to NVIDIA's
   OpenAI-compatible API, with streaming, base documentation and test scripts.
 
-[Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/lordraw77/llmproxy/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/lordraw77/llmproxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/lordraw77/llmproxy/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/lordraw77/llmproxy/compare/v1.2.0...v1.3.0
