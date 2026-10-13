@@ -258,3 +258,45 @@ embeddings_models = ["nvidia/nv-embedqa-e5-v5"]
 # base_url = "http://localhost:11434/v1"
 # api_key = "ollama"              # any non-empty string; Ollama ignores it
 # models = ["llama3.2", "qwen2.5"]
+
+# ── Local: two or more servers, clean client-facing names ────────────────────
+# Two (or N) local inference servers — vLLM, Ollama, LM Studio, llama.cpp's
+# server, TGI, or any other OpenAI-compatible backend — each exposing one or
+# more models. With 2+ providers the default naming rule prefixes every model
+# as "<provider>:<model>" to avoid collisions (see the naming note at the top
+# of this file). Give every model an explicit `alias` to opt back out of the
+# prefix: the client then sees only "modello1" / "modello2" / "modelloN",
+# never which box or backend actually serves it, and can keep sending that
+# same name even if you later move a model to a different server.
+#
+# Routing is otherwise entirely transparent: the registry maps each alias to
+# its (provider, native base_url, native model id) at start-up, so a request
+# for "modello2" is sent to server-b's own model id "qwen2.5:14b" with no
+# client-visible trace of it. All current cache functionality (CACHE_ENABLED,
+# CACHE_POLICY, CACHE_TTL, CACHE_MAX_SIZE) applies unchanged — the cache key is
+# a hash of the outbound payload, so it doesn't care which provider ends up
+# serving the request.
+#
+# [[provider]]
+# name = "server-a"
+# type = "openai_compatible"
+# base_url = "http://192.168.1.10:8000/v1"   # vLLM, LM Studio, llama.cpp, ...
+# api_key = "${LOCAL_SERVER_A_API_KEY}"       # or a literal placeholder if unused
+# models = [
+#   { id = "meta-llama/Llama-3.1-8B-Instruct", alias = "modello1" },
+#   { id = "mistralai/Mistral-7B-Instruct-v0.3", alias = "modello2" },
+# ]
+#
+# [[provider]]
+# name = "server-b"
+# type = "openai_compatible"
+# base_url = "http://192.168.1.11:11434/v1"   # e.g. Ollama
+# api_key = "ollama"
+# models = [
+#   { id = "qwen2.5:14b", alias = "modello3" },
+#   { id = "llama3.2", alias = "modelloN" },
+# ]
+#
+# Add a third, fourth, ... [[provider]] block the same way for more servers;
+# each can expose as many models as it hosts. Every alias must be unique
+# across the whole file (llmproxy fails fast at start-up on a collision).
