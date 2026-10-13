@@ -20,6 +20,7 @@ Anthropic has no embeddings endpoint; routing embeddings here raises.
 import json
 import time
 
+from ..upstream.sse import force_utf8
 from .base import AggregatedResponse, Provider, TranslatedStream, resp_json
 from .translate.anthropic import split_system
 
@@ -143,7 +144,7 @@ class AnthropicProvider(Provider):
             return obj
 
         event = None
-        for line in resp.iter_lines(decode_unicode=True):
+        for line in force_utf8(resp).iter_lines(decode_unicode=True):
             if not line:
                 continue
             if line.startswith("event:"):

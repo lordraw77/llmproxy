@@ -11,8 +11,21 @@ import json
 _READ_SIZE = 65536
 
 
+def force_utf8(resp):
+    """Decode ``resp`` as UTF-8, the only encoding the SSE spec allows.
+
+    ``requests`` falls back to ISO-8859-1 for any ``text/*`` response without a
+    ``charset`` parameter, and upstreams answer ``text/event-stream`` bare — so
+    ``iter_lines(decode_unicode=True)`` would turn "città" into "cittÃ ".
+    """
+    if hasattr(resp, "encoding"):
+        resp.encoding = "utf-8"
+    return resp
+
+
 def _decode_lines(resp):
     """Yield the text lines of a streaming response, whatever surface it offers."""
+    force_utf8(resp)
     try:
         return resp.iter_lines(decode_unicode=True, chunk_size=_READ_SIZE)
     except TypeError:

@@ -20,6 +20,7 @@ embeddings endpoint here; routing embeddings to it raises.
 import json
 import time
 
+from ..upstream.sse import force_utf8
 from .base import AggregatedResponse, Provider, TranslatedStream, resp_json
 from .translate.gemini import to_contents
 
@@ -147,7 +148,7 @@ class GeminiProvider(Provider):
         base = {"id": "chatcmpl-llmproxy", "object": "chat.completion.chunk", "created": created}
         tool_idx = 0
 
-        for line in resp.iter_lines(decode_unicode=True):
+        for line in force_utf8(resp).iter_lines(decode_unicode=True):
             if not line or not line.startswith("data:"):
                 continue
             raw = line[len("data:"):].strip()
