@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-09
+
+### Added
+
+- **Reranking and pair scoring.** New `POST /v1/rerank` (also `/v2/rerank`,
+  `/rerank`; Jina/Cohere format) and `POST /v1/score` (also `/score`; vLLM
+  format) endpoints, forwarded to the upstream `/rerank` and `/score`. Models are
+  declared per provider with the new `rerank_models` key (aliases and
+  `provider:model` naming work as for `models`), e.g. a local vLLM serving
+  Qwen3-Reranker. Responses go through the response cache like embeddings.
+
+### Changed
+
+- The Anthropic and Gemini providers now refuse every path other than chat with a
+  400, instead of only `/embeddings`.
+
 ## [1.4.2] - 2026-10-13
 
 ### Fixed
@@ -516,6 +532,7 @@ endpoint and native `llama.cpp` compatibility were added.
   OpenAI-compatible API, with streaming, base documentation and test scripts.
 
 [Unreleased]: https://github.com/lordraw77/llmproxy/compare/v1.4.2...HEAD
+[1.5.0]: https://github.com/lordraw77/llmproxy/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/lordraw77/llmproxy/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/lordraw77/llmproxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/lordraw77/llmproxy/compare/v1.3.0...v1.4.0
