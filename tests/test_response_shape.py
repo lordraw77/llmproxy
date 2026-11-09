@@ -125,3 +125,21 @@ def test_the_embeddings_routes_were_already_defended(client, monkeypatch):
         "embedding": []
     }
     assert client.post("/api/embed", json={"model": "test-embed", "input": "hi"}).status_code == 200
+
+
+@pytest.mark.parametrize("usage,expected", [
+    ({"prompt_tokens": 7, "total_tokens": 7}, 7),
+    ({"total_tokens": 5}, 5),
+    (None, 0),
+])
+def test_api_embed_reports_prompt_eval_count(client, monkeypatch, usage, expected):
+    def fake_post(self, payload, stream, rid, path="/chat/completions"):
+        body = {"object": "list", "data": [{"embedding": [0.1, 0.2]}]}
+        if usage is not None:
+            body["usage"] = usage
+        return AggregatedResponse(body)
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "post", fake_post)
+    data = client.post("/api/embed", json={"model": "test-embed", "input": "hi"}).get_json()
+
+    assert data == {"model": "test-embed", "embeddings": [[0.1, 0.2]], "prompt_eval_count": expected}

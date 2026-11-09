@@ -187,7 +187,7 @@ def api_embeddings():
 
 @bp.route("/api/embed", methods=["POST"])
 def api_embed():
-    """Ollama-style embeddings (new): ``{"model", "input"}`` -> ``{"embeddings": [[...]]}``."""
+    """Ollama-style embeddings (new): ``{"model", "input"}`` -> ``{"model", "embeddings": [[...]], "prompt_eval_count"}``."""
     container = deps()
     body = request.get_json(force=True) or {}
     inp = body.get("input", "")
@@ -197,4 +197,10 @@ def api_embed():
     payload = container.embeddings.with_input_type({"model": model, "input": inp})
     data = resp_json(container.embeddings.embed(payload, rid))
     embeddings = [d.get("embedding", []) for d in (data.get("data") or [])]
-    return jsonify({"model": model, "embeddings": embeddings})
+    usage = data.get("usage") or {}
+    prompt_tokens = usage.get("prompt_tokens", usage.get("total_tokens", 0)) or 0
+    return jsonify({
+        "model": model,
+        "embeddings": embeddings,
+        "prompt_eval_count": prompt_tokens,
+    })
