@@ -15,12 +15,13 @@ class Container:
     """Bundle of application-scoped collaborators."""
 
     def __init__(self, settings, logger, registry, completions, embeddings, metrics,
-                 cache=None, audit=None):
+                 cache=None, audit=None, rerank=None):
         self.settings = settings
         self.logger = logger
         self.registry = registry
         self.completions = completions
         self.embeddings = embeddings
+        self.rerank = rerank
         self.metrics = metrics
         self.cache = cache
         self.audit = audit

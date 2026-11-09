@@ -18,6 +18,7 @@ from ..metrics import MetricsCollector
 from ..providers import build_providers
 from ..services.completions import CompletionService
 from ..services.embeddings import EmbeddingService
+from ..services.rerank import RerankService
 from .container import Container
 from .errors import register_error_handlers
 from .middleware import register_middleware
@@ -59,6 +60,7 @@ def create_app(settings=None):
     registry = build_providers(settings, logger, metrics)
     completions = CompletionService(registry, cache=cache)
     embeddings = EmbeddingService(registry, settings.embeddings_input_type, cache=cache)
+    rerank = RerankService(registry, cache=cache)
 
     app = Flask(__name__)
     # Refused by Werkzeug before the body is buffered, so an oversized request
@@ -66,7 +68,7 @@ def create_app(settings=None):
     # is Flask's own default and what this deployment had until now.
     app.config["MAX_CONTENT_LENGTH"] = settings.max_request_bytes or None
     Container(
-        settings, logger, registry, completions, embeddings, metrics, cache, audit
+        settings, logger, registry, completions, embeddings, metrics, cache, audit, rerank
     ).attach(app)
 
     register_middleware(app)

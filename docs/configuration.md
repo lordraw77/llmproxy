@@ -281,7 +281,7 @@ lives in `llmproxy/providers/translate/`, free of HTTP and unit-tested.
 > declared residual risk. The `gemini` side *was* validated end-to-end.
 
 **Per-provider keys**: `name`, `type`, `base_url`, `api_key`, `models`,
-`embeddings_models`, `timeout`, `api_version` (Azure), `max_tokens` (Anthropic
+`embeddings_models`, `rerank_models` (served on `/v1/rerank` and `/v1/score`), `timeout`, `api_version` (Azure), `max_tokens` (Anthropic
 default), `proxy`, and `extra_headers`. Use `${ENV_VAR}` in any string to
 interpolate from the environment (keeps secrets out of the file).
 

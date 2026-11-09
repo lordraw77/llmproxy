@@ -122,6 +122,7 @@ class ProviderConfig:
     extra_headers: dict = field(default_factory=dict)
     models: tuple = ()            # ((model_id, alias|None), ...)
     embeddings_models: tuple = ()  # ((model_id, alias|None), ...)
+    rerank_models: tuple = ()  # ((model_id, alias|None), ...) served on /v1/rerank and /v1/score
     timeout: float = 0.0          # 0 = use the global upstream_timeout
     api_version: str = ""
     max_tokens: int = 4096        # required by Anthropic; ignored by OpenAI-family
@@ -264,6 +265,7 @@ def _provider_from_dict(d, missing=None):
         extra_headers=extra,
         models=_normalize_models(d.get("models")),
         embeddings_models=_normalize_models(d.get("embeddings_models")),
+        rerank_models=_normalize_models(d.get("rerank_models")),
         timeout=float(d.get("timeout", 0) or 0),
         api_version=str(d.get("api_version", "")),
         max_tokens=int(d.get("max_tokens", 4096)),

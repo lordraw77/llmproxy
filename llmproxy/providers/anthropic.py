@@ -75,8 +75,8 @@ class AnthropicProvider(Provider):
 
     def _url(self, path, stream, model=None):
         base = self._config.base_url.rstrip("/")
-        if path == "/embeddings":
-            raise ValueError("Anthropic provider does not support embeddings")
+        if path != "/chat/completions":
+            raise ValueError(f"Anthropic provider does not support {path}")
         return f"{base}/v1/messages"
 
     def _build_body(self, payload, path, stream, aggregate):

@@ -213,3 +213,21 @@ def test_a_provider_with_no_models_yields_an_empty_catalogue():
     assert reg.default_model == ""
     assert reg.embeddings_model == ""
     assert reg.has("anything") is False
+
+
+# --- rerank ----------------------------------------------------------------
+
+def test_rerank_models_are_resolved_and_routed():
+    providers = [FakeProvider("spark")]
+    reg = ProviderRegistry.build(providers, {"spark": {"chat": [], "embeddings": [], "rerank": [("reranker", None)]}})
+    assert reg.rerank_model == "reranker"
+    assert reg.resolve_rerank(None) == "reranker"
+    provider, native = reg.rerank_provider_for("reranker")
+    assert provider.name == "spark" and native == "reranker"
+    assert reg.owner_of("reranker") == "spark"
+
+
+def test_unknown_rerank_model_raises():
+    reg = build({"nvidia": {"chat": ["c"]}})
+    with pytest.raises(ValueError):
+        reg.rerank_provider_for("nope")

@@ -101,8 +101,8 @@ class GeminiProvider(Provider):
 
     def _url(self, path, stream, model=None):
         base = self._config.base_url.rstrip("/")
-        if path == "/embeddings":
-            raise ValueError("Gemini provider does not support embeddings")
+        if path != "/chat/completions":
+            raise ValueError(f"Gemini provider does not support {path}")
         method = "streamGenerateContent" if stream else "generateContent"
         url = f"{base}/models/{model}:{method}"
         return f"{url}?alt=sse" if stream else url

@@ -29,6 +29,16 @@ api_key = "${NVIDIA_API_KEY}"
 models = ["meta/llama-3.1-8b-instruct", "meta/llama-3.1-70b-instruct"]
 embeddings_models = ["nvidia/nv-embedqa-e5-v5"]
 
+# ── Local vLLM reranker (Qwen3-Reranker) ────────────────────────────────────
+# Served on /v1/rerank (Jina/Cohere format) and /v1/score (vLLM pair scoring).
+# The id is the container's --served-model-name.
+# [[provider]]
+# name = "spark-reranker"
+# type = "openai_compatible"
+# base_url = "http://spark-host:8002"       # vLLM serves /rerank and /score at the root
+# api_key = "none"
+# rerank_models = ["reranker"]
+
 # ── OpenAI ───────────────────────────────────────────────────────────────────
 # [[provider]]
 # name = "openai"

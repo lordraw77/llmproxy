@@ -41,6 +41,8 @@ plus a couple of utility routes. Unless noted otherwise, the base URL is
 | POST | `/v1/chat/completions` | OpenAI | ✅ (default off) | Chat completion (pass-through) |
 | POST | `/v1/completions` | OpenAI | ✅ (default off) | Text completion |
 | POST | `/v1/embeddings` | OpenAI | — | Embeddings (pass-through) |
+| POST | `/v1/rerank` | Jina/Cohere | — | Rerank (pass-through; also `/v2/rerank`, `/rerank`) |
+| POST | `/v1/score` | vLLM | — | Pair scoring (pass-through; also `/score`) |
 
 > The OpenAI endpoints are **also served without the `/v1` prefix**
 > (`/chat/completions`, `/completions`, `/embeddings`, `/models`,
@@ -361,6 +363,21 @@ OpenAI-format embeddings, forwarded to the upstream `/embeddings`.
 
 **Response:** the upstream OpenAI embeddings response (`data[].embedding`,
 `usage`, …), with `model` set to the resolved model.
+
+### `POST /v1/rerank` and `POST /v1/score`
+
+Reranking (`/v1/rerank`, also `/v2/rerank` and `/rerank`; Jina/Cohere format) and
+pair scoring (`/v1/score`, also `/score`; vLLM format), forwarded to the upstream
+`/rerank` and `/score`. The body is passed through unchanged apart from `model`,
+which is resolved against the provider's `rerank_models` (alias, `provider:model`
+or native id; defaults to the first one). Responses are cached like embeddings.
+
+```bash
+curl http://localhost:11434/v1/rerank -H 'Content-Type: application/json' \
+  -d '{"model":"reranker","query":"capitale d\'Italia","documents":["Roma","Parigi"]}'
+```
+
+Not available on the Anthropic and Gemini providers (answers 400).
 
 ---
 

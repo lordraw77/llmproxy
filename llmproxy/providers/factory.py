@@ -66,7 +66,11 @@ def build_providers(settings, logger, metrics=None):
         if not _has_credential(cfg):
             unauthenticated.append(cfg.name)
         providers.append(provider_cls(cfg, settings, logger, metrics))
-        model_specs[cfg.name] = {"chat": cfg.models, "embeddings": cfg.embeddings_models}
+        model_specs[cfg.name] = {
+            "chat": cfg.models,
+            "embeddings": cfg.embeddings_models,
+            "rerank": cfg.rerank_models,
+        }
 
     if unauthenticated:
         logger.warning(

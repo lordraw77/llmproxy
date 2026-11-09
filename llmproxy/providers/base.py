@@ -201,6 +201,8 @@ class Provider:
         when we will need to re-aggregate the stream into a non-streaming reply.
         """
         body = dict(payload)
+        if path in ("/rerank", "/score"):
+            return body
         body["stream"] = stream
         if aggregate:
             body["stream_options"] = {"include_usage": True}

@@ -13,7 +13,8 @@ import pytest
 from llmproxy.config import ProviderConfig, Settings
 
 
-def make_provider_config(name, models=(), embeddings_models=(), api_key="k", type="openai_compatible"):
+def make_provider_config(name, models=(), embeddings_models=(), api_key="k", type="openai_compatible",
+                         rerank_models=()):
     """Build a :class:`ProviderConfig` with the auth wrapping the config layer applies.
 
     ``models``/``embeddings_models`` accept bare ids or ``(id, alias)`` pairs and
@@ -30,6 +31,7 @@ def make_provider_config(name, models=(), embeddings_models=(), api_key="k", typ
         auth_value=f"Bearer {api_key}",
         models=norm(models),
         embeddings_models=norm(embeddings_models),
+        rerank_models=norm(rerank_models),
     )
 
 

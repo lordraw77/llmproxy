@@ -108,6 +108,33 @@ def v1_embeddings():
     return jsonify(data)
 
 
+def _rerank_like(kind):
+    container = deps()
+    body = request.get_json(force=True) or {}
+    rid = getattr(g, "req_id", None)
+    payload = dict(body)
+    payload["model"] = container.rerank.resolve_model(body.get("model"))
+    data = resp_json(container.rerank.send(payload, rid, kind))
+    if isinstance(data, dict):
+        data["model"] = payload["model"]
+    return jsonify(data)
+
+
+@bp.route("/v1/rerank", methods=["POST"])
+@bp.route("/v2/rerank", methods=["POST"])
+@bp.route("/rerank", methods=["POST"])
+def v1_rerank():
+    """Jina/Cohere-style ``/v1/rerank``: passthrough to the upstream ``/rerank``."""
+    return _rerank_like("rerank")
+
+
+@bp.route("/v1/score", methods=["POST"])
+@bp.route("/score", methods=["POST"])
+def v1_score():
+    """vLLM-style ``/v1/score``: passthrough to the upstream ``/score``."""
+    return _rerank_like("score")
+
+
 @bp.route("/v1/completions", methods=["POST"])
 @bp.route("/completions", methods=["POST"])
 def v1_completions():

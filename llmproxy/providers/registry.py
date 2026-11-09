@@ -27,10 +27,11 @@ class _Entry:
 class ProviderRegistry:
     """Flat catalogue of exposed models across every provider, plus routing."""
 
-    def __init__(self, providers, chat_entries, embedding_entries):
+    def __init__(self, providers, chat_entries, embedding_entries, rerank_entries=()):
         self.providers = tuple(providers)
         self._chat = {e.exposed: e for e in chat_entries}
         self._embeddings = {e.exposed: e for e in embedding_entries}
+        self._rerank = {e.exposed: e for e in rerank_entries}
         # Bare native id -> exposed name, for back-compat resolution of clients
         # that still send the unprefixed model id (e.g. after the NVIDIA_* env
         # fallback). First declaration wins on duplicates.
@@ -40,6 +41,7 @@ class ProviderRegistry:
         self.models = tuple(e.exposed for e in chat_entries)
         self.default_model = self.models[0] if self.models else ""
         self.embeddings_model = embedding_entries[0].exposed if embedding_entries else ""
+        self.rerank_model = rerank_entries[0].exposed if rerank_entries else ""
 
     # --- chat -------------------------------------------------------------
 
@@ -71,7 +73,7 @@ class ProviderRegistry:
             The provider name, or ``"llmproxy"`` when the model is not exposed —
             there is no upstream to attribute it to.
         """
-        entry = self._chat.get(name) or self._embeddings.get(name)
+        entry = self._chat.get(name) or self._embeddings.get(name) or self._rerank.get(name)
         return entry.provider.name if entry is not None else "llmproxy"
 
     def provider_for(self, name):
@@ -108,6 +110,26 @@ class ProviderRegistry:
             raise ValueError(f"no provider serves embeddings model '{name}'")
         return entry.provider, entry.model_id
 
+    # --- rerank / score ---------------------------------------------------
+
+    def resolve_rerank(self, requested):
+        """Resolve a requested rerank model to its exposed name."""
+        if requested and requested in self._rerank:
+            return requested
+        for exposed, entry in self._rerank.items():
+            if entry.model_id == requested:
+                return exposed
+        return requested or self.rerank_model
+
+    def rerank_provider_for(self, name):
+        """Return ``(provider, native_model_id)`` for an exposed rerank model."""
+        entry = self._rerank.get(name)
+        if entry is None:
+            entry = self._rerank.get(self.resolve_rerank(name))
+        if entry is None:
+            raise ValueError(f"no provider serves rerank model '{name}'")
+        return entry.provider, entry.model_id
+
     # --- construction -----------------------------------------------------
 
     @classmethod
@@ -117,13 +139,13 @@ class ProviderRegistry:
         Args:
             providers: ordered iterable of :class:`~llmproxy.providers.base.Provider`.
             model_specs: mapping ``provider_name -> {"chat": [(id, alias)],
-                "embeddings": [(id, alias)]}``.
+                "embeddings": [(id, alias)], "rerank": [(id, alias)]}``.
 
         Raises:
             ValueError: if two models collide on the same exposed name.
         """
         providers = list(providers)
-        chat_entries, embedding_entries = [], []
+        chat_entries, embedding_entries, rerank_entries = [], [], []
         seen = {}
         # With a single provider there is nothing to disambiguate, so exposed
         # names stay bare (identical to the pre-multi-provider behaviour). The
@@ -131,7 +153,11 @@ class ProviderRegistry:
         prefixed = len(providers) > 1
         for provider in providers:
             spec = model_specs.get(provider.name, {})
-            for kind, bucket in (("chat", chat_entries), ("embeddings", embedding_entries)):
+            for kind, bucket in (
+                ("chat", chat_entries),
+                ("embeddings", embedding_entries),
+                ("rerank", rerank_entries),
+            ):
                 for model_id, alias in spec.get(kind, []):
                     exposed = alias or (f"{provider.name}:{model_id}" if prefixed else model_id)
                     if exposed in seen:
@@ -141,4 +167,4 @@ class ProviderRegistry:
                         )
                     seen[exposed] = provider.name
                     bucket.append(_Entry(exposed, provider, model_id))
-        return cls(providers, chat_entries, embedding_entries)
+        return cls(providers, chat_entries, embedding_entries, rerank_entries)

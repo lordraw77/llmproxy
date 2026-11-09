@@ -167,7 +167,7 @@ class ResponseCache:
         """
         if not self._enabled or self.policy == "off":
             return False
-        if namespace == "embeddings" or self.policy == "all":
+        if namespace in ("embeddings", "rerank", "score") or self.policy == "all":
             return True
         if self.policy == "deterministic" and is_deterministic(payload):
             return True
